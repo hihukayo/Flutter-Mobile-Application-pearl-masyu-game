@@ -27,6 +27,10 @@ class _RegisterPageState extends State<RegisterPage> {
       _showMsg('请填写所有字段');
       return;
     }
+    if (phone.length != 11 || !RegExp(r'^\d{11}$').hasMatch(phone)) {
+      _showMsg('手机号格式不正确（需 11 位数字）');
+      return;
+    }
     if (password != confirm) {
       _showMsg('两次密码不一致');
       return;

@@ -233,6 +233,40 @@ final _router = Router()
     } catch (e) {
       return Response.ok(jsonEncode(_fail('服务器错误：$e')), headers: {'Content-Type': 'application/json'});
     }
+  })
+
+  // DELETE /api/user/delete
+  ..delete('/api/user/delete', (Request req) async {
+    try {
+      final body = jsonDecode(await req.readAsString());
+      final username = body['username']?.toString().trim();
+      final phone = body['phone']?.toString().trim();
+      final password = body['password']?.toString();
+
+      if (username == null || phone == null || password == null) {
+        return Response.ok(jsonEncode(_fail('参数不完整')), headers: {'Content-Type': 'application/json'});
+      }
+
+      // 验证账号是否存在且密码正确
+      final check = await _pool.execute(
+        'SELECT password FROM users WHERE username = :username AND phone = :phone',
+        {'username': username, 'phone': phone},
+      );
+      if (check.rows.isEmpty) {
+        return Response.ok(jsonEncode(_fail('账号信息不匹配')), headers: {'Content-Type': 'application/json'});
+      }
+      if (check.rows.first.colAt(0) != _hashPassword(password)) {
+        return Response.ok(jsonEncode(_fail('密码错误')), headers: {'Content-Type': 'application/json'});
+      }
+
+      await _pool.execute(
+        'DELETE FROM users WHERE username = :username',
+        {'username': username},
+      );
+      return Response.ok(jsonEncode(_ok('账号已注销')), headers: {'Content-Type': 'application/json'});
+    } catch (e) {
+      return Response.ok(jsonEncode(_fail('服务器错误：$e')), headers: {'Content-Type': 'application/json'});
+    }
   });
 
 // ---- CORS 中间件 ----

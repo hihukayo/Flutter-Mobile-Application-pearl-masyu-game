@@ -89,4 +89,18 @@ class ApiService {
     );
     return jsonDecode(res.body);
   }
+
+  // ---- 注销账号 ----
+  static Future<Map<String, dynamic>> deleteAccount({
+    required String username,
+    required String phone,
+    required String password,
+  }) async {
+    final res = await http.delete(
+      Uri.parse('$baseUrl/user/delete'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'username': username, 'phone': phone, 'password': password}),
+    );
+    return jsonDecode(res.body);
+  }
 }
