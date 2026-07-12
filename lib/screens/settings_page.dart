@@ -94,7 +94,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showEditDialog(String field, String current, Future<Map<String, dynamic>> Function(String value, String password) api) {
-    final controller = TextEditingController(text: current);
+    final controller = TextEditingController();
     final pwdController = TextEditingController();
 
     showDialog(
@@ -106,7 +106,7 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             TextField(
               controller: controller,
-              decoration: InputDecoration(labelText: '新$field', border: const OutlineInputBorder()),
+              decoration: InputDecoration(labelText: '请输入新$field', border: const OutlineInputBorder()),
             ),
             const SizedBox(height: 12),
             TextField(
