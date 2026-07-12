@@ -16,7 +16,10 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
-      body: ListView(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: ListView(
         padding: const EdgeInsets.all(24),
         children: [
           _buildCard(
@@ -44,6 +47,8 @@ class _SettingsPageState extends State<SettingsPage> {
             )),
           ),
         ],
+          ),
+        ),
       ),
     );
   }
@@ -76,7 +81,7 @@ class _SettingsPageState extends State<SettingsPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('修改$field'),
+        title: Text('修改$field', style: const TextStyle(fontSize: 18)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -119,7 +124,7 @@ class _SettingsPageState extends State<SettingsPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('修改密码'),
+        title: const Text('修改密码', style: TextStyle(fontSize: 18)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

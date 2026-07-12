@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'login_page.dart';
 import 'settings_page.dart';
 
@@ -17,12 +19,32 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   Uint8List? _avatarBytes;
 
+  @override
+  void initState() {
+    super.initState();
+    _loadAvatar();
+  }
+
+  Future<void> _loadAvatar() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString('avatar_${widget.username}');
+    if (stored != null) {
+      setState(() => _avatarBytes = base64Decode(stored));
+    }
+  }
+
+  Future<void> _saveAvatar(Uint8List bytes) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('avatar_${widget.username}', base64Encode(bytes));
+  }
+
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final xfile = await picker.pickImage(source: ImageSource.gallery, maxWidth: 256, maxHeight: 256);
     if (xfile != null) {
       final bytes = await xfile.readAsBytes();
       setState(() => _avatarBytes = bytes);
+      _saveAvatar(bytes);
     }
   }
 
@@ -32,34 +54,34 @@ class _ProfilePageState extends State<ProfilePage> {
       padding: const EdgeInsets.all(24),
       children: [
         const SizedBox(height: 20),
-        GestureDetector(
-          onTap: _pickImage,
-          child: Stack(
-            alignment: Alignment.bottomRight,
-            children: [
-              CircleAvatar(
-                radius: 40,
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                backgroundImage: _avatarBytes != null ? MemoryImage(_avatarBytes!) : null,
-                child: _avatarBytes == null
-                    ? Text(
-                        widget.username.isNotEmpty ? widget.username[0].toUpperCase() : '?',
-                        style: const TextStyle(fontSize: 32, color: Colors.white),
-                      )
-                    : null,
-              ),
-              CircleAvatar(
-                radius: 14,
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
-              ),
-            ],
+        Center(
+          child: GestureDetector(
+            onTap: _pickImage,
+            child: Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                CircleAvatar(
+                  radius: 40,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  backgroundImage: _avatarBytes != null ? MemoryImage(_avatarBytes!) : null,
+                  child: _avatarBytes == null
+                      ? Text(
+                          widget.username.isNotEmpty ? widget.username[0].toUpperCase() : '?',
+                          style: const TextStyle(fontSize: 32, color: Colors.white),
+                        )
+                      : null,
+                ),
+                CircleAvatar(
+                  radius: 14,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 16),
-        Text(widget.username, textAlign: TextAlign.center, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text(widget.phone, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+        Center(child: Text(widget.username, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold))),
         const SizedBox(height: 32),
         Card(
           child: Column(
