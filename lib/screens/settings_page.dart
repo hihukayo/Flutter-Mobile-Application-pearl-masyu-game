@@ -182,17 +182,19 @@ class _SettingsPageState extends State<SettingsPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('注销账号', style: TextStyle(fontSize: 18, color: Colors.red)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('此操作不可恢复，所有数据将被永久删除。', style: TextStyle(color: Colors.red, fontSize: 13)),
-            const SizedBox(height: 16),
-            TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: '手机号', border: OutlineInputBorder())),
-            const SizedBox(height: 12),
-            TextField(controller: pwdCtrl, obscureText: true, decoration: const InputDecoration(labelText: '密码', border: OutlineInputBorder())),
-            const SizedBox(height: 12),
-            TextField(controller: confirmPwdCtrl, obscureText: true, decoration: const InputDecoration(labelText: '确认密码', border: OutlineInputBorder())),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('此操作不可恢复，所有数据将被永久删除。', style: TextStyle(color: Colors.red, fontSize: 13)),
+              const SizedBox(height: 16),
+              TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: '手机号', border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(controller: pwdCtrl, obscureText: true, decoration: const InputDecoration(labelText: '密码', border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(controller: confirmPwdCtrl, obscureText: true, decoration: const InputDecoration(labelText: '确认密码', border: OutlineInputBorder())),
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
