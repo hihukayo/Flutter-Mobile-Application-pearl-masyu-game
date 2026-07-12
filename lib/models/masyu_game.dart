@@ -6,12 +6,16 @@ class MasyuPuzzle {
   final int rows;
   final int cols;
   final List<List<CellType>> cells;
-  late final List<List<EdgeState>> hEdges; // horizontal edges (rows x (cols-1))
-  late final List<List<EdgeState>> vEdges; // vertical edges ((rows-1) x cols)
-  final List<List<CellType>> _solution;
+  List<List<EdgeState>> hEdges; // horizontal edges (rows x (cols-1))
+  List<List<EdgeState>> vEdges; // vertical edges ((rows-1) x cols)
 
-  MasyuPuzzle(this.rows, this.cols, this.cells, List<List<CellType>>? solution)
-      : _solution = solution ?? cells {
+  MasyuPuzzle(this.rows, this.cols, this.cells)
+      : hEdges = [],
+        vEdges = [] {
+    _initEdges();
+  }
+
+  void _initEdges() {
     hEdges = List.generate(rows, (_) => List.filled(cols - 1, EdgeState.none));
     vEdges = List.generate(rows - 1, (_) => List.filled(cols, EdgeState.none));
   }
@@ -21,9 +25,8 @@ class MasyuPuzzle {
     vEdges = List.generate(rows - 1, (_) => List.filled(cols, EdgeState.none));
   }
 
-  /// 根据行列偏移获取预设题目
+  /// 获取预设 7x7 题目
   static MasyuPuzzle sample() {
-    // 7x7 经典 Masyu 题目
     final cells = List.generate(7, (_) => List.filled(7, CellType.empty));
     cells[0][2] = CellType.black;
     cells[0][4] = CellType.white;
@@ -38,6 +41,6 @@ class MasyuPuzzle {
     cells[5][5] = CellType.black;
     cells[6][2] = CellType.white;
     cells[6][4] = CellType.black;
-    return MasyuPuzzle(7, 7, cells, null);
+    return MasyuPuzzle(7, 7, cells);
   }
 }

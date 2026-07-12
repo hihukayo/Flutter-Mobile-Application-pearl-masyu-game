@@ -12,57 +12,70 @@ class MasyuBoard extends StatefulWidget {
 class _MasyuBoardState extends State<MasyuBoard> {
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 1,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final size = constraints.maxWidth;
-          final cellSize = size / (widget.puzzle.cols + 1);
-          return GestureDetector(
-            onTapDown: (details) => _onTap(details.localPosition, cellSize),
-            child: CustomPaint(
-              size: Size(size, size),
-              painter: _MasyuPainter(puzzle: widget.puzzle, cellSize: cellSize),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = constraints.maxWidth < constraints.maxHeight
+            ? constraints.maxWidth
+            : constraints.maxHeight;
+        final p = widget.puzzle;
+        // 节点间距
+        final spacing = size / (p.cols + 1);
+        // 棋盘实际占宽
+        final boardSize = spacing * (p.cols + 1);
+        final offsetX = (constraints.maxWidth - boardSize) / 2;
+        final offsetY = (constraints.maxHeight - boardSize) / 2;
+
+        return GestureDetector(
+          onTapDown: (details) {
+            final pos = details.localPosition;
+            // 转为相对于棋盘左上角的坐标
+            final bx = pos.dx - offsetX;
+            final by = pos.dy - offsetY;
+            // 计算最近的网格节点索引
+            final col = (bx / spacing).round();
+            final row = (by / spacing).round();
+
+            // 点击在两个节点之间的区域 => 画线
+            // 检查点击是否靠近某条水平或垂直边
+            final nodeX = col * spacing;
+            final nodeY = row * spacing;
+            final dx = bx - nodeX;
+            final dy = by - nodeY;
+
+            // 边的判定阈值
+            final threshold = spacing * 0.2;
+
+            setState(() {
+              // 水平边：点击在水平方向靠近中点，垂直方向在节点附近
+              if (dy.abs() < threshold && dx.abs() < spacing * 0.6) {
+                final c = (bx / spacing).floor();
+                final r = row;
+                if (r >= 0 && r < p.rows && c >= 0 && c < p.cols - 1) {
+                  p.hEdges[r][c] = _nextEdge(p.hEdges[r][c]);
+                }
+              }
+              // 垂直边
+              if (dx.abs() < threshold && dy.abs() < spacing * 0.6) {
+                final r = (by / spacing).floor();
+                final c = col;
+                if (r >= 0 && r < p.rows - 1 && c >= 0 && c < p.cols) {
+                  p.vEdges[r][c] = _nextEdge(p.vEdges[r][c]);
+                }
+              }
+            });
+          },
+          child: CustomPaint(
+            size: Size(constraints.maxWidth, constraints.maxHeight),
+            painter: _MasyuPainter(
+              puzzle: widget.puzzle,
+              spacing: spacing,
+              offsetX: offsetX,
+              offsetY: offsetY,
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
-  }
-
-  void _onTap(Offset pos, double cellSize) {
-    final p = widget.puzzle;
-    final margin = cellSize;
-    final col = ((pos.dx - margin) / cellSize).round();
-    final row = ((pos.dy - margin) / cellSize).round();
-
-    // 点击网格线（两个单元格之间的边）
-    // 水平边：在行上方
-    // 垂直边：在列左方
-    // 点击位置在单元格中心附近 => 判断最近的边
-    final cx = margin + col * cellSize;
-    final cy = margin + row * cellSize;
-    final dx = pos.dx - cx;
-    final dy = pos.dy - cy;
-
-    setState(() {
-      // 水平边：在两个单元格之间，dy 接近 0 且 dx 在范围内
-      if (dy.abs() < cellSize * 0.3 && dx.abs() < cellSize * 0.8) {
-        final r = row;
-        final c = (pos.dx - margin + cellSize / 2) ~/ cellSize - 1;
-        if (r >= 0 && r < p.rows && c >= 0 && c < p.cols - 1) {
-          p.hEdges[r][c] = _nextEdge(p.hEdges[r][c]);
-        }
-      }
-      // 垂直边
-      if (dx.abs() < cellSize * 0.3 && dy.abs() < cellSize * 0.8) {
-        final r = (pos.dy - margin + cellSize / 2) ~/ cellSize - 1;
-        final c = col;
-        if (r >= 0 && r < p.rows - 1 && c >= 0 && c < p.cols) {
-          p.vEdges[r][c] = _nextEdge(p.vEdges[r][c]);
-        }
-      }
-    });
   }
 
   EdgeState _nextEdge(EdgeState s) {
@@ -76,81 +89,106 @@ class _MasyuBoardState extends State<MasyuBoard> {
 
 class _MasyuPainter extends CustomPainter {
   final MasyuPuzzle puzzle;
-  final double cellSize;
+  final double spacing;
+  final double offsetX;
+  final double offsetY;
 
-  _MasyuPainter({required this.puzzle, required this.cellSize});
+  _MasyuPainter({
+    required this.puzzle,
+    required this.spacing,
+    required this.offsetX,
+    required this.offsetY,
+  });
+
+  Offset _node(int col, int row) {
+    return Offset(offsetX + (col + 1) * spacing, offsetY + (row + 1) * spacing);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
-    final margin = cellSize;
     final rows = puzzle.rows;
     final cols = puzzle.cols;
 
-    // 背景
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height),
-        Paint()..color = const Color(0xFFF5F0E8));
-
-    // 绘制网格线（浅灰色）
-    final gridPaint = Paint()
-      ..color = const Color(0xFFCCCCCC)
-      ..strokeWidth = 1;
-
+    // ---- 1. 绘制节点（小灰点） ----
+    final dotPaint = Paint()..color = const Color(0xFFBBBBBB);
     for (int r = 0; r <= rows; r++) {
-      canvas.drawLine(
-        Offset(margin, margin + r * cellSize),
-        Offset(margin + cols * cellSize, margin + r * cellSize),
-        gridPaint,
-      );
-    }
-    for (int c = 0; c <= cols; c++) {
-      canvas.drawLine(
-        Offset(margin + c * cellSize, margin),
-        Offset(margin + c * cellSize, margin + rows * cellSize),
-        gridPaint,
-      );
+      for (int c = 0; c <= cols; c++) {
+        canvas.drawCircle(_node(c, r), 2.5, dotPaint);
+      }
     }
 
-    // 绘制玩家画的线
+    // ---- 2. 绘制玩家画的线 ----
+    final linePaint = Paint()
+      ..color = Colors.black87
+      ..strokeWidth = 3.5
+      ..strokeCap = StrokeCap.round;
+
+    // 水平边
     for (int r = 0; r < rows; r++) {
       for (int c = 0; c < cols - 1; c++) {
         if (puzzle.hEdges[r][c] == EdgeState.line) {
-          final x1 = margin + (c + 1) * cellSize;
-          final y = margin + (r + 0.5) * cellSize;
-          canvas.drawLine(Offset(x1 - cellSize * 0.4, y), Offset(x1 + cellSize * 0.4, y),
-              Paint()..color = Colors.black87..strokeWidth = 3..strokeCap = StrokeCap.round);
+          final p1 = _node(c + 1, r);
+          final p2 = _node(c + 2, r);
+          canvas.drawLine(
+            Offset((p1.dx + p2.dx) / 2, p1.dy),
+            Offset((p1.dx + p2.dx) / 2, p1.dy),
+            linePaint,
+          );
+          canvas.drawLine(p1, p2, linePaint);
         }
-      }
-    }
-    for (int r = 0; r < rows - 1; r++) {
-      for (int c = 0; c < cols; c++) {
-        if (puzzle.vEdges[r][c] == EdgeState.line) {
-          final x = margin + (c + 0.5) * cellSize;
-          final y1 = margin + (r + 1) * cellSize;
-          canvas.drawLine(Offset(x, y1 - cellSize * 0.4), Offset(x, y1 + cellSize * 0.4),
-              Paint()..color = Colors.black87..strokeWidth = 3..strokeCap = StrokeCap.round);
+        if (puzzle.hEdges[r][c] == EdgeState.cross) {
+          final p = _node(c + 1, r);
+          final s = 6.0;
+          canvas.drawLine(Offset(p.dx - s, p.dy - s), Offset(p.dx + s, p.dy + s),
+              Paint()..color = Colors.red[300]!..strokeWidth = 2);
+          canvas.drawLine(Offset(p.dx + s, p.dy - s), Offset(p.dx - s, p.dy + s),
+              Paint()..color = Colors.red[300]!..strokeWidth = 2);
         }
       }
     }
 
-    // 绘制珍珠（黑白圆圈）
+    // 垂直边
+    for (int r = 0; r < rows - 1; r++) {
+      for (int c = 0; c < cols; c++) {
+        if (puzzle.vEdges[r][c] == EdgeState.line) {
+          final p1 = _node(c, r + 1);
+          final p2 = _node(c, r + 2);
+          canvas.drawLine(p1, p2, linePaint);
+        }
+        if (puzzle.vEdges[r][c] == EdgeState.cross) {
+          final p = _node(c, r + 1);
+          final s = 6.0;
+          canvas.drawLine(Offset(p.dx - s, p.dy - s), Offset(p.dx + s, p.dy + s),
+              Paint()..color = Colors.red[300]!..strokeWidth = 2);
+          canvas.drawLine(Offset(p.dx + s, p.dy - s), Offset(p.dx - s, p.dy + s),
+              Paint()..color = Colors.red[300]!..strokeWidth = 2);
+        }
+      }
+    }
+
+    // ---- 3. 绘制珍珠 ----
     for (int r = 0; r < rows; r++) {
       for (int c = 0; c < cols; c++) {
         if (puzzle.cells[r][c] == CellType.empty) continue;
 
-        final cx = margin + (c + 0.5) * cellSize;
-        final cy = margin + (r + 0.5) * cellSize;
-        final radius = cellSize * 0.35;
+        final center = _node(c, r);
+        final radius = spacing * 0.38;
 
         if (puzzle.cells[r][c] == CellType.white) {
-          // 白珍珠：白色填充 + 黑色边框
-          canvas.drawCircle(Offset(cx, cy), radius,
-              Paint()..color = Colors.white);
-          canvas.drawCircle(Offset(cx, cy), radius,
-              Paint()..color = Colors.black..style = PaintingStyle.stroke..strokeWidth = 2);
+          // 白珍珠：白色填充 + 粗黑边框
+          canvas.drawCircle(center, radius, Paint()..color = Colors.white);
+          canvas.drawCircle(center, radius, Paint()
+            ..color = Colors.black87
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.5);
         } else {
-          // 黑珍珠：黑色填充
-          canvas.drawCircle(Offset(cx, cy), radius,
-              Paint()..color = Colors.black87);
+          // 黑珍珠：纯黑填充
+          canvas.drawCircle(center, radius, Paint()..color = Colors.black87);
+          // 细白边增加精致感
+          canvas.drawCircle(center, radius, Paint()
+            ..color = Colors.black87
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1);
         }
       }
     }
