@@ -6,8 +6,8 @@ class MasyuPuzzle {
   final int rows;
   final int cols;
   final List<List<CellType>> cells;
-  List<List<EdgeState>> hEdges; // horizontal edges (rows x (cols-1))
-  List<List<EdgeState>> vEdges; // vertical edges ((rows-1) x cols)
+  List<List<EdgeState>> hEdges; // 水平边 (rows+1) x cols  dot(c,r)↔dot(c+1,r)
+  List<List<EdgeState>> vEdges; // 垂直边 rows x (cols+1)  dot(c,r)↔dot(c,r+1)
 
   MasyuPuzzle(this.rows, this.cols, this.cells)
       : hEdges = [],
@@ -15,14 +15,23 @@ class MasyuPuzzle {
     _initEdges();
   }
 
+  /// 从现有谜题克隆（保留边状态）
+  MasyuPuzzle clone() {
+    final p = MasyuPuzzle(rows, cols,
+        cells.map((r) => List<CellType>.from(r)).toList());
+    p.hEdges = hEdges.map((r) => List<EdgeState>.from(r)).toList();
+    p.vEdges = vEdges.map((r) => List<EdgeState>.from(r)).toList();
+    return p;
+  }
+
   void _initEdges() {
-    hEdges = List.generate(rows, (_) => List.filled(cols - 1, EdgeState.none));
-    vEdges = List.generate(rows - 1, (_) => List.filled(cols, EdgeState.none));
+    hEdges = List.generate(rows + 1, (_) => List.filled(cols, EdgeState.none));
+    vEdges = List.generate(rows, (_) => List.filled(cols + 1, EdgeState.none));
   }
 
   void reset() {
-    hEdges = List.generate(rows, (_) => List.filled(cols - 1, EdgeState.none));
-    vEdges = List.generate(rows - 1, (_) => List.filled(cols, EdgeState.none));
+    hEdges = List.generate(rows + 1, (_) => List.filled(cols, EdgeState.none));
+    vEdges = List.generate(rows, (_) => List.filled(cols + 1, EdgeState.none));
   }
 
   /// 获取预设 7x7 题目

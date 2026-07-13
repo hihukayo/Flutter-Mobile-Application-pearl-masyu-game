@@ -1,199 +1,290 @@
 import 'package:flutter/material.dart';
 import '../models/masyu_game.dart';
 
+class _EdgeKey {
+  final bool isH;
+  final int r, c;
+  const _EdgeKey(this.isH, this.r, this.c);
+  @override bool operator ==(Object o) => o is _EdgeKey && isH == o.isH && r == o.r && c == o.c;
+  @override int get hashCode => Object.hash(isH, r, c);
+}
+
 class MasyuBoard extends StatefulWidget {
   final MasyuPuzzle puzzle;
   const MasyuBoard({super.key, required this.puzzle});
-
-  @override
-  State<MasyuBoard> createState() => _MasyuBoardState();
+  @override State<MasyuBoard> createState() => _MasyuBoardState();
 }
 
 class _MasyuBoardState extends State<MasyuBoard> {
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final size = constraints.maxWidth < constraints.maxHeight
-            ? constraints.maxWidth
-            : constraints.maxHeight;
-        final p = widget.puzzle;
-        // 节点间距
-        final spacing = size / (p.cols + 1);
-        // 棋盘实际占宽
-        final boardSize = spacing * (p.cols + 1);
-        final offsetX = (constraints.maxWidth - boardSize) / 2;
-        final offsetY = (constraints.maxHeight - boardSize) / 2;
+  double _spacing = 0, _offsetX = 0, _offsetY = 0;
+  final List<List<int>> _dragPath = [];
+  int _dragMode = 0; // 0=未知, 1=画线, -1=擦线
+  final Set<_EdgeKey> _previewEdges = {};
+  bool _loopComplete = false;
 
-        return GestureDetector(
-          onTapDown: (details) {
-            final pos = details.localPosition;
-            // 转为相对于棋盘左上角的坐标
-            final bx = pos.dx - offsetX;
-            final by = pos.dy - offsetY;
-            // 计算最近的网格节点索引
-            final col = (bx / spacing).round();
-            final row = (by / spacing).round();
-
-            // 点击在两个节点之间的区域 => 画线
-            // 检查点击是否靠近某条水平或垂直边
-            final nodeX = col * spacing;
-            final nodeY = row * spacing;
-            final dx = bx - nodeX;
-            final dy = by - nodeY;
-
-            // 边的判定阈值
-            final threshold = spacing * 0.2;
-
-            setState(() {
-              // 水平边：点击在水平方向靠近中点，垂直方向在节点附近
-              if (dy.abs() < threshold && dx.abs() < spacing * 0.6) {
-                final c = (bx / spacing).floor();
-                final r = row;
-                if (r >= 0 && r < p.rows && c >= 0 && c < p.cols - 1) {
-                  p.hEdges[r][c] = _nextEdge(p.hEdges[r][c]);
-                }
-              }
-              // 垂直边
-              if (dx.abs() < threshold && dy.abs() < spacing * 0.6) {
-                final r = (by / spacing).floor();
-                final c = col;
-                if (r >= 0 && r < p.rows - 1 && c >= 0 && c < p.cols) {
-                  p.vEdges[r][c] = _nextEdge(p.vEdges[r][c]);
-                }
-              }
-            });
-          },
-          child: CustomPaint(
-            size: Size(constraints.maxWidth, constraints.maxHeight),
-            painter: _MasyuPainter(
-              puzzle: widget.puzzle,
-              spacing: spacing,
-              offsetX: offsetX,
-              offsetY: offsetY,
-            ),
-          ),
-        );
-      },
-    );
+  void _calcLayout(BoxConstraints c) {
+    final p = widget.puzzle;
+    final a = (c.maxWidth < c.maxHeight ? c.maxWidth : c.maxHeight) - 24;
+    _spacing = a / (p.cols + 2);
+    _offsetX = (c.maxWidth - _spacing * (p.cols + 2)) / 2;
+    _offsetY = (c.maxHeight - _spacing * (p.rows + 2)) / 2;
   }
 
-  EdgeState _nextEdge(EdgeState s) {
-    switch (s) {
-      case EdgeState.none: return EdgeState.line;
-      case EdgeState.line: return EdgeState.cross;
-      case EdgeState.cross: return EdgeState.none;
+  // ===== dot 坐标系 (0..cols, 0..rows) =====
+
+  /// 像素 → dot 坐标 (r, c)，范围 0..rows, 0..cols
+  List<int>? _posToDot(Offset pos) {
+    final bx = pos.dx - _offsetX, by = pos.dy - _offsetY;
+    final c = ((bx - _spacing) / _spacing).round();
+    final r = ((by - _spacing) / _spacing).round();
+    if (c < 0 || c > widget.puzzle.cols || r < 0 || r > widget.puzzle.rows) return null;
+    final dx = (bx - _spacing - c * _spacing).abs();
+    final dy = (by - _spacing - r * _spacing).abs();
+    if (dx > _spacing * 0.48 || dy > _spacing * 0.48) return null;
+    return [r, c];
+  }
+
+  bool _dotsMatch(List<int> a, List<int> b) => a[0] == b[0] && a[1] == b[1];
+
+  /// 相邻 dot 之间的边
+  ///   右移 (r,c)→(r,c+1)：hEdges[r][c]
+  ///   下移 (r,c)→(r+1,c)：vEdges[r][c]
+  ///   左移 (r,c)→(r,c-1)：hEdges[r][c-1]
+  ///   上移 (r,c)→(r-1,c)：vEdges[r-1][c]
+  _EdgeKey? _edgeBetween(List<int> a, List<int> b) {
+    final dr = b[0] - a[0], dc = b[1] - a[1];
+    if (dr.abs() + dc.abs() != 1) return null;
+    if (dr == 0) return _EdgeKey(true, a[0], dc > 0 ? a[1] : b[1]);
+    return _EdgeKey(false, dr > 0 ? a[0] : b[0], a[1]);
+  }
+
+  /// 自动补全路径中间的 dot
+  List<List<int>> _fill(List<int> a, List<int> b) {
+    final r = <List<int>>[];
+    final dr = b[0] - a[0], dc = b[1] - a[1];
+    if (dr != 0 && dc != 0) return r;
+    final sr = dr == 0 ? 0 : (dr > 0 ? 1 : -1);
+    final sc = dc == 0 ? 0 : (dc > 0 ? 1 : -1);
+    int rr = a[0] + sr, cc = a[1] + sc;
+    while (rr != b[0] || cc != b[1]) { r.add([rr, cc]); rr += sr; cc += sc; }
+    r.add([b[0], b[1]]);
+    return r;
+  }
+
+  // ---- 边状态读写 ----
+
+  bool _isLine(_EdgeKey k) {
+    try {
+      if (k.isH) return widget.puzzle.hEdges[k.r][k.c] == EdgeState.line;
+      return widget.puzzle.vEdges[k.r][k.c] == EdgeState.line;
+    } catch (_) { return false; }
+  }
+
+  void _setLine(_EdgeKey k, bool v) {
+    try {
+      if (k.isH) widget.puzzle.hEdges[k.r][k.c] = v ? EdgeState.line : EdgeState.none;
+      else widget.puzzle.vEdges[k.r][k.c] = v ? EdgeState.line : EdgeState.none;
+    } catch (_) {}
+  }
+
+  void _rebuildPreview() {
+    _previewEdges.clear();
+    for (int i = 0; i < _dragPath.length - 1; i++) {
+      final e = _edgeBetween(_dragPath[i], _dragPath[i + 1]);
+      if (e != null) _previewEdges.add(e);
     }
+    if (_loopComplete && _dragPath.length >= 2) {
+      final e = _edgeBetween(_dragPath.last, _dragPath[0]);
+      if (e != null) _previewEdges.add(e);
+    }
+  }
+
+  /// 单点切换：遍历四个方向找第一条存在的边
+  void _toggleNearestEdge(List<int> dot) {
+    const dirs = [
+      [0, 1], [0, -1], [1, 0], [-1, 0],
+    ];
+    final rows = widget.puzzle.rows, cols = widget.puzzle.cols;
+    for (final d in dirs) {
+      final nr = dot[0] + d[0], nc = dot[1] + d[1];
+      if (nc < 0 || nc > cols || nr < 0 || nr > rows) continue;
+      final k = _edgeBetween(dot, [nr, nc]);
+      if (k != null) { _setLine(k, !_isLine(k)); setState(() {}); return; }
+    }
+  }
+
+  // ---- 事件处理 ----
+
+  void _onDown(Offset pos) {
+    final d = _posToDot(pos);
+    if (d == null) return;
+    _dragPath.clear(); _dragPath.add(d);
+    _dragMode = 0; _previewEdges.clear(); _loopComplete = false; setState(() {});
+  }
+
+  void _onMove(Offset pos) {
+    if (_dragPath.isEmpty) return;
+    final dot = _posToDot(pos);
+    if (dot == null) return;
+    if (_dotsMatch(dot, _dragPath.last)) return;
+    if (_loopComplete) _loopComplete = false;
+
+    final dr = dot[0] - _dragPath.last[0], dc = dot[1] - _dragPath.last[1];
+    if (dr != 0 && dc != 0) return; // 禁止斜向
+
+    // 检查回到旧 dot → 截断 or 闭环
+    for (int i = 0; i < _dragPath.length - 1; i++) {
+      if (_dotsMatch(_dragPath[i], dot)) {
+        if (i == 0 && _dragPath.length >= 3) {
+          _loopComplete = true;
+          _rebuildPreview(); setState(() {}); return;
+        }
+        _dragPath.removeRange(i + 1, _dragPath.length);
+        _rebuildPreview(); setState(() {}); return;
+      }
+    }
+
+    // 自动补全
+    for (final d in _fill(_dragPath.last, dot)) {
+      for (int i = 0; i < _dragPath.length - 1; i++) {
+        if (_dotsMatch(_dragPath[i], d)) {
+          if (i == 0 && _dragPath.length >= 3) {
+            _loopComplete = true;
+            _rebuildPreview(); setState(() {}); return;
+          }
+          _dragPath.removeRange(i + 1, _dragPath.length);
+          _dragPath.add(d);
+          _rebuildPreview(); setState(() {}); return;
+        }
+      }
+      if (_dotsMatch(_dragPath.last, d)) continue;
+      _dragPath.add(d);
+    }
+
+    // 检测画线/擦线模式
+    if (_dragMode == 0 && _dragPath.length >= 2) {
+      final e = _edgeBetween(_dragPath[0], _dragPath[1]);
+      if (e != null) _dragMode = _isLine(e) ? -1 : 1;
+    }
+
+    _rebuildPreview(); setState(() {});
+  }
+
+  void _onUp(Offset pos) {
+    if (_dragPath.length == 1) {
+      _toggleNearestEdge(_dragPath[0]);
+    } else if (_dragMode != 0 && _previewEdges.isNotEmpty) {
+      for (final e in _previewEdges) _setLine(e, _dragMode == 1);
+    }
+    _dragPath.clear(); _dragMode = 0; _previewEdges.clear(); _loopComplete = false;
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (_, c) {
+      _calcLayout(c);
+      return Listener(
+        onPointerDown: (e) => _onDown(e.localPosition),
+        onPointerMove: (e) => _onMove(e.localPosition),
+        onPointerUp: (e) => _onUp(e.localPosition),
+        onPointerCancel: (_) { _dragPath.clear(); _dragMode = 0; _previewEdges.clear(); setState(() {}); },
+        child: CustomPaint(
+          size: Size(c.maxWidth, c.maxHeight),
+          painter: _MasyuPainter(puzzle: widget.puzzle, spacing: _spacing,
+              offsetX: _offsetX, offsetY: _offsetY,
+              preview: _previewEdges, drawMode: _dragMode),
+        ),
+      );
+    });
   }
 }
 
+// ============================================================================
+//  绘制器 — dot-to-dot 连接，不超出灰色边框
+// ============================================================================
+
 class _MasyuPainter extends CustomPainter {
   final MasyuPuzzle puzzle;
-  final double spacing;
-  final double offsetX;
-  final double offsetY;
+  final double spacing, offsetX, offsetY;
+  final Set<_EdgeKey> preview;
+  final int drawMode;
 
-  _MasyuPainter({
-    required this.puzzle,
-    required this.spacing,
-    required this.offsetX,
-    required this.offsetY,
-  });
+  _MasyuPainter({required this.puzzle, required this.spacing,
+    required this.offsetX, required this.offsetY,
+    required this.preview, required this.drawMode});
 
-  Offset _node(int col, int row) {
-    return Offset(offsetX + (col + 1) * spacing, offsetY + (row + 1) * spacing);
-  }
+  /// dot(c, r) 坐标：c=0..cols, r=0..rows
+  Offset _n(int c, int r) => Offset(offsetX + (c + 1) * spacing, offsetY + (r + 1) * spacing);
+
+  int get rows => puzzle.rows;
+  int get cols => puzzle.cols;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final rows = puzzle.rows;
-    final cols = puzzle.cols;
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), Paint()..color = Colors.white);
+    _border(canvas);
+    _dots(canvas);
+    _pearls(canvas);
+    _lines(canvas);
+    _previewLines(canvas);
+  }
 
-    // ---- 1. 绘制节点（小灰点） ----
-    final dotPaint = Paint()..color = const Color(0xFFBBBBBB);
-    for (int r = 0; r <= rows; r++) {
-      for (int c = 0; c <= cols; c++) {
-        canvas.drawCircle(_node(c, r), 2.5, dotPaint);
+  void _border(Canvas canvas) {
+    final l = offsetX + spacing * 0.5, t = offsetY + spacing * 0.5;
+    final r = offsetX + (cols + 1.5) * spacing, b = offsetY + (rows + 1.5) * spacing;
+    canvas.drawRect(Rect.fromLTRB(l, t, r, b),
+        Paint()..color = const Color(0xFFDDDDDD)..style = PaintingStyle.stroke..strokeWidth = 1.5);
+  }
+
+  void _dots(Canvas canvas) {
+    for (int r = 0; r <= rows; r++)
+      for (int c = 0; c <= cols; c++)
+        canvas.drawCircle(_n(c, r), 2, Paint()..color = const Color(0xFFBBBBBB));
+  }
+
+  /// hEdges[r][c] : dot(c,r) ↔ dot(c+1,r)   r=0..rows, c=0..cols-1
+  /// vEdges[r][c] : dot(c,r) ↔ dot(c,r+1)   r=0..rows-1, c=0..cols
+  void _lines(Canvas canvas) {
+    final p = Paint()..color = const Color(0xFF000000)..strokeWidth = 4..strokeCap = StrokeCap.round;
+    for (int r = 0; r <= rows; r++)
+      for (int c = 0; c < cols; c++)
+        if (puzzle.hEdges[r][c] == EdgeState.line) canvas.drawLine(_n(c, r), _n(c + 1, r), p);
+    for (int r = 0; r < rows; r++)
+      for (int c = 0; c <= cols; c++)
+        if (puzzle.vEdges[r][c] == EdgeState.line) canvas.drawLine(_n(c, r), _n(c, r + 1), p);
+  }
+
+  void _previewLines(Canvas canvas) {
+    if (preview.isEmpty) return;
+    final p = Paint()..color = const Color(0xFF000000)..strokeWidth = 6..strokeCap = StrokeCap.round;
+    for (final e in preview) {
+      if (e.isH) {
+        if (e.c < 0 || e.c >= cols) continue;
+        canvas.drawLine(_n(e.c, e.r), _n(e.c + 1, e.r), p);
+      } else {
+        if (e.r < 0 || e.r >= rows) continue;
+        canvas.drawLine(_n(e.c, e.r), _n(e.c, e.r + 1), p);
       }
     }
+  }
 
-    // ---- 2. 绘制玩家画的线 ----
-    final linePaint = Paint()
-      ..color = Colors.black87
-      ..strokeWidth = 3.5
-      ..strokeCap = StrokeCap.round;
-
-    // 水平边
-    for (int r = 0; r < rows; r++) {
-      for (int c = 0; c < cols - 1; c++) {
-        if (puzzle.hEdges[r][c] == EdgeState.line) {
-          final p1 = _node(c + 1, r);
-          final p2 = _node(c + 2, r);
-          canvas.drawLine(
-            Offset((p1.dx + p2.dx) / 2, p1.dy),
-            Offset((p1.dx + p2.dx) / 2, p1.dy),
-            linePaint,
-          );
-          canvas.drawLine(p1, p2, linePaint);
-        }
-        if (puzzle.hEdges[r][c] == EdgeState.cross) {
-          final p = _node(c + 1, r);
-          final s = 6.0;
-          canvas.drawLine(Offset(p.dx - s, p.dy - s), Offset(p.dx + s, p.dy + s),
-              Paint()..color = Colors.red[300]!..strokeWidth = 2);
-          canvas.drawLine(Offset(p.dx + s, p.dy - s), Offset(p.dx - s, p.dy + s),
-              Paint()..color = Colors.red[300]!..strokeWidth = 2);
-        }
-      }
-    }
-
-    // 垂直边
-    for (int r = 0; r < rows - 1; r++) {
-      for (int c = 0; c < cols; c++) {
-        if (puzzle.vEdges[r][c] == EdgeState.line) {
-          final p1 = _node(c, r + 1);
-          final p2 = _node(c, r + 2);
-          canvas.drawLine(p1, p2, linePaint);
-        }
-        if (puzzle.vEdges[r][c] == EdgeState.cross) {
-          final p = _node(c, r + 1);
-          final s = 6.0;
-          canvas.drawLine(Offset(p.dx - s, p.dy - s), Offset(p.dx + s, p.dy + s),
-              Paint()..color = Colors.red[300]!..strokeWidth = 2);
-          canvas.drawLine(Offset(p.dx + s, p.dy - s), Offset(p.dx - s, p.dy + s),
-              Paint()..color = Colors.red[300]!..strokeWidth = 2);
-        }
-      }
-    }
-
-    // ---- 3. 绘制珍珠 ----
+  void _pearls(Canvas canvas) {
     for (int r = 0; r < rows; r++) {
       for (int c = 0; c < cols; c++) {
         if (puzzle.cells[r][c] == CellType.empty) continue;
-
-        final center = _node(c, r);
-        final radius = spacing * 0.38;
-
+        final center = _n(c, r);
+        final radius = spacing * 0.35;
         if (puzzle.cells[r][c] == CellType.white) {
-          // 白珍珠：白色填充 + 粗黑边框
           canvas.drawCircle(center, radius, Paint()..color = Colors.white);
-          canvas.drawCircle(center, radius, Paint()
-            ..color = Colors.black87
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 2.5);
+          canvas.drawCircle(center, radius, Paint()..color = Colors.black87..style = PaintingStyle.stroke..strokeWidth = 2.5);
         } else {
-          // 黑珍珠：纯黑填充
           canvas.drawCircle(center, radius, Paint()..color = Colors.black87);
-          // 细白边增加精致感
-          canvas.drawCircle(center, radius, Paint()
-            ..color = Colors.black87
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1);
         }
       }
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _MasyuPainter old) => true;
 }
