@@ -246,7 +246,7 @@ class _MasyuPainter extends CustomPainter {
   /// hEdges[r][c] : dot(c,r) ↔ dot(c+1,r)   r=0..rows, c=0..cols-1
   /// vEdges[r][c] : dot(c,r) ↔ dot(c,r+1)   r=0..rows-1, c=0..cols
   void _lines(Canvas canvas) {
-    final p = Paint()..color = const Color(0xFF000000)..strokeWidth = 4..strokeCap = StrokeCap.round;
+    final p = Paint()..color = const Color(0xFF000000)..strokeWidth = 8..strokeCap = StrokeCap.square;
     for (int r = 0; r <= rows; r++)
       for (int c = 0; c < cols; c++)
         if (puzzle.hEdges[r][c] == EdgeState.line) canvas.drawLine(_n(c, r), _n(c + 1, r), p);
@@ -257,7 +257,7 @@ class _MasyuPainter extends CustomPainter {
 
   void _previewLines(Canvas canvas) {
     if (preview.isEmpty) return;
-    final p = Paint()..color = const Color(0xFF000000)..strokeWidth = 6..strokeCap = StrokeCap.round;
+    final p = Paint()..color = const Color(0xFF000000)..strokeWidth = 8..strokeCap = StrokeCap.square;
     for (final e in preview) {
       if (e.isH) {
         if (e.c < 0 || e.c >= cols) continue;
