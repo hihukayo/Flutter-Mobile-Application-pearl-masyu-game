@@ -31,6 +31,7 @@ class _GamePageState extends State<GamePage> {
   Timer? _statusTimer;
   String _statusMsg = '';
   final List<_UndoEntry> _undoStack = [];
+  final List<_UndoEntry> _redoStack = [];
   final TextEditingController _textController = TextEditingController();
   final FocusNode _textFocus = FocusNode();
 
@@ -59,6 +60,7 @@ class _GamePageState extends State<GamePage> {
     _errors = 0;
     _paused = false;
     _undoStack.clear();
+    _redoStack.clear();
     _boardKey = GlobalKey();
     _startTimer();
     if (mounted) setState(() {});
@@ -88,6 +90,7 @@ class _GamePageState extends State<GamePage> {
     if (_paused || _gameOver) return;
     _undoStack.add(_UndoEntry(r, c, oldVal));
     if (_undoStack.length > 50) _undoStack.removeAt(0);
+    _redoStack.clear();
     if (newVal != _puzzle.solution[r][c]) {
       _errors++;
       if (_errors >= _maxErrors) {
@@ -103,6 +106,17 @@ class _GamePageState extends State<GamePage> {
     _tap();
     if (_undoStack.isEmpty || _paused || _gameOver) return;
     final entry = _undoStack.removeLast();
+    final currentVal = _puzzle.cells[entry.r][entry.c];
+    _redoStack.add(_UndoEntry(entry.r, entry.c, currentVal));
+    setState(() => _puzzle.cells[entry.r][entry.c] = entry.oldVal);
+  }
+
+  void _redo() {
+    _tap();
+    if (_redoStack.isEmpty || _paused || _gameOver) return;
+    final entry = _redoStack.removeLast();
+    final currentVal = _puzzle.cells[entry.r][entry.c];
+    _undoStack.add(_UndoEntry(entry.r, entry.c, currentVal));
     setState(() => _puzzle.cells[entry.r][entry.c] = entry.oldVal);
   }
 
@@ -148,13 +162,6 @@ class _GamePageState extends State<GamePage> {
     _seconds = 0;
     _startTimer();
     if (mounted) setState(() {});
-  }
-
-  void _erase() {
-    _tap();
-    if (_paused || _gameOver) return;
-    _boardKey.currentState?.eraseSelected();
-    setState(() {});
   }
 
   void _showMsg(String msg) {
@@ -367,7 +374,7 @@ class _GamePageState extends State<GamePage> {
                 Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
                   _iconTextBtn(Icons.undo, '撤销', disabled ? null : (_undoStack.isEmpty ? null : _undo), s),
                   _iconTextBtn(Icons.replay, '重置', _restart, s),
-                  _iconTextBtn(Icons.backspace, '擦除', disabled ? null : _erase, s),
+                  _iconTextBtn(Icons.redo, '重做', disabled ? null : (_redoStack.isEmpty ? null : _redo), s),
                 ]),
               ],
             ),

@@ -43,18 +43,6 @@ class SudokuBoardState extends State<SudokuBoard> {
     return true;
   }
 
-  void eraseSelected() {
-    if (_selectedRow == null || _selectedCol == null) return;
-    final r = _selectedRow!, c = _selectedCol!;
-    if (widget.puzzle.given[r][c]) return;
-    setState(() {
-      widget.puzzle.cells[r][c] = 0;
-      widget.puzzle.notes[r][c].clear();
-      _errors.remove('$r,$c');
-    });
-    widget.onRefresh?.call();
-  }
-
   void fillNumber(int n) {
     if (_selectedRow == null || _selectedCol == null || widget.readOnly) return;
     final r = _selectedRow!, c = _selectedCol!;
