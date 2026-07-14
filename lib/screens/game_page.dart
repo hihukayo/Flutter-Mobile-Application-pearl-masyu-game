@@ -1,10 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../models/sudoku_game.dart';
 import '../models/sudoku_generator.dart';
 import '../widgets/sudoku_board.dart';
 
 const _blue = Color(0xFF0B4CFF);
+const _red = Color(0xFFE53935);
+const _maxErrors = 3;
 
 class GamePage extends StatefulWidget {
   const GamePage({super.key});
@@ -20,8 +24,11 @@ class _GamePageState extends State<GamePage> {
   bool _paused = false;
   bool _isSolved = false;
   bool _hasGivenUp = false;
+  bool _noteMode = false;
+  bool _gameOver = false;
+  int _errors = 0;
   Timer? _timer;
-  int? _selectedNumber;
+  final List<_UndoEntry> _undoStack = [];
 
   @override
   void initState() {
@@ -35,11 +42,18 @@ class _GamePageState extends State<GamePage> {
     super.dispose();
   }
 
+  void _tap() => HapticFeedback.lightImpact();
+
   void _newGame() {
+    _tap();
     _puzzle = SudokuGenerator().generate(clues: 30);
     _isSolved = false;
     _hasGivenUp = false;
-    _selectedNumber = null;
+    _noteMode = false;
+    _gameOver = false;
+    _errors = 0;
+    _paused = false;
+    _undoStack.clear();
     _boardKey = GlobalKey();
     _startTimer();
     if (mounted) setState(() {});
@@ -54,182 +68,306 @@ class _GamePageState extends State<GamePage> {
     });
   }
 
+  void _togglePause() {
+    _tap();
+    setState(() => _paused = !_paused);
+  }
+
   String _formatTime(int s) {
-    final h = (s ~/ 3600).toString().padLeft(2, '0');
-    final m = ((s % 3600) ~/ 60).toString().padLeft(2, '0');
+    final m = (s ~/ 60).toString().padLeft(2, '0');
     final sec = (s % 60).toString().padLeft(2, '0');
-    return '$h:$m:$sec';
+    return '$m:$sec';
+  }
+
+  void _onCellChanged(int r, int c, int oldVal, int newVal) {
+    if (_paused || _gameOver) return;
+    _undoStack.add(_UndoEntry(r, c, oldVal));
+    if (_undoStack.length > 50) _undoStack.removeAt(0);
+    if (newVal != _puzzle.solution[r][c]) {
+      _errors++;
+      if (_errors >= _maxErrors) {
+        _timer?.cancel();
+        setState(() => _gameOver = true);
+        return;
+      }
+      setState(() {});
+    }
+  }
+
+  void _undo() {
+    _tap();
+    if (_undoStack.isEmpty || _paused || _gameOver) return;
+    final entry = _undoStack.removeLast();
+    setState(() => _puzzle.cells[entry.r][entry.c] = entry.oldVal);
   }
 
   void _checkCompletion() {
+    _tap();
+    if (_paused || _gameOver) return;
     if (_puzzle.isComplete() && _puzzle.isCorrect()) {
       _timer?.cancel();
       setState(() => _isSolved = true);
-      _showMsg('恭喜你，解答正确！');
     } else {
       _showMsg('还有错误，再检查一下吧');
     }
   }
 
   void _autoSolve() {
+    _tap();
     _timer?.cancel();
+    _boardKey = GlobalKey();
     setState(() {
       _hasGivenUp = true;
       for (int r = 0; r < 9; r++)
         for (int c = 0; c < 9; c++)
           _puzzle.cells[r][c] = _puzzle.solution[r][c];
     });
-    _showMsg('已显示答案');
   }
 
   void _restart() {
+    _tap();
+    _undoStack.clear();
     for (int r = 0; r < 9; r++)
-      for (int c = 0; c < 9; c++)
+      for (int c = 0; c < 9; c++) {
         if (!_puzzle.given[r][c]) _puzzle.cells[r][c] = 0;
-    _seconds = 0;
+        _puzzle.notes[r][c].clear();
+      }
+    _errors = 0;
+    _gameOver = false;
     _isSolved = false;
     _hasGivenUp = false;
+    _seconds = 0;
     _startTimer();
     if (mounted) setState(() {});
   }
 
   void _erase() {
-    final board = _boardKey.currentState;
-    if (board != null) { board.eraseCell(); setState(() {}); }
+    _tap();
+    if (_paused || _gameOver) return;
+    _boardKey.currentState?.eraseSelected();
+    setState(() {});
   }
 
   void _showMsg(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
+      content: Text(msg, style: GoogleFonts.montserrat()),
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 2),
     ));
   }
 
+  int _cluesRemaining() {
+    int n = 0;
+    for (int r = 0; r < 9; r++)
+      for (int c = 0; c < 9; c++)
+        if (_puzzle.cells[r][c] == 0) n++;
+    return n;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final infoStyle = GoogleFonts.montserrat(
+      fontSize: 13, fontWeight: FontWeight.w500,
+    );
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('数独', style: TextStyle(fontWeight: FontWeight.bold)),
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Icon(Icons.more_horiz, color: const Color(0xFF78909C), size: 24),
+        ),
+        leadingWidth: 40,
+        title: Text('数独', style: GoogleFonts.montserrat(fontWeight: FontWeight.w700)),
         centerTitle: true,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
         elevation: 0,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: GestureDetector(
+              onTap: _paused || _gameOver ? null : () => setState(() => _noteMode = !_noteMode),
+              child: Icon(
+                _noteMode ? Icons.edit_note : Icons.edit_note_outlined,
+                color: _noteMode ? _blue : const Color(0xFF78909C),
+                size: 24,
+              ),
+            ),
+          ),
+        ],
       ),
-      body: Column(children: [
-        Text(_formatTime(_seconds),
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w300, color: _blue, letterSpacing: 4)),
-        const SizedBox(height: 6),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: SudokuBoard(
-            key: _boardKey,
-            puzzle: _puzzle,
-            selectedNumber: _selectedNumber,
-          ),
-        ),
-        const SizedBox(height: 8),
-        // 数字按钮
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(children: [
-            Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-              for (int n = 1; n <= 5; n++) _numBtn(n),
-            ]),
-            const SizedBox(height: 6),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-              for (int n = 6; n <= 9; n++) _numBtn(n),
-            ]),
-          ]),
-        ),
-        const SizedBox(height: 8),
-        // 操作按钮
-        Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          _iconBtn(Icons.refresh_rounded, '新游戏', _newGame),
-          _iconBtn(Icons.replay_rounded, '重来', _restart),
-          _iconBtn(Icons.undo_rounded, '擦除', _erase),
-          _iconBtn(Icons.auto_fix_high_rounded, '求解',
-              (_isSolved || _hasGivenUp) ? null : _autoSolve),
-        ]),
-        const SizedBox(height: 8),
-        SizedBox(
-          width: 200, height: 40,
-          child: ElevatedButton(
-            onPressed: (_isSolved || _hasGivenUp) ? null : _checkCompletion,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _isSolved ? Colors.green : _blue,
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: Colors.grey[400],
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              elevation: 0,
+      body: SafeArea(
+        child: Column(
+          children: [
+            const Divider(height: 1, thickness: 0.5),
+            // 计数栏（大标题正下方）
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 14,
+                      color: _errors >= _maxErrors ? _red : const Color(0xFF78909C)),
+                  const SizedBox(width: 4),
+                  Text('$_errors/$_maxErrors', style: GoogleFonts.montserrat(
+                    fontSize: 12, fontWeight: FontWeight.w500,
+                    color: _errors >= _maxErrors ? _red : const Color(0xFF455A64),
+                  )),
+                  const SizedBox(width: 24),
+                  GestureDetector(
+                    onTap: _gameOver ? null : _togglePause,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _paused ? Icons.play_arrow : Icons.pause,
+                          size: 14,
+                          color: _gameOver ? Colors.grey[350]! : _blue,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(_formatTime(_seconds), style: GoogleFonts.montserrat(
+                          fontSize: 12, fontWeight: FontWeight.w500,
+                          color: _gameOver ? Colors.grey[350]! : const Color(0xFF455A64),
+                        )),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 24),
+                  Text('${_cluesRemaining()} 空', style: GoogleFonts.montserrat(
+                    fontSize: 12, fontWeight: FontWeight.w500, color: const Color(0xFF455A64),
+                  )),
+                ],
+              ),
             ),
-            child: Text(
-              _isSolved ? '已完成 ✓' : (_hasGivenUp ? '已放弃' : '完成'),
-              style: const TextStyle(fontSize: 15),
+
+            // 棋盘
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: SudokuBoard(
+                        key: _boardKey,
+                        puzzle: _puzzle,
+                        noteMode: _noteMode,
+                        readOnly: _paused || _gameOver,
+                        onCellChanged: _onCellChanged,
+                        onRefresh: () => setState(() {}),
+                      ),
+                    ),
+                    // 状态提示（紧贴棋盘下方）
+                    Container(
+                      height: 28,
+                      alignment: Alignment.center,
+                      child: _buildStatus(),
+                    ),
+                    // 分隔线
+                    const Divider(height: 1, thickness: 0.5),
+                  ],
+                ),
+              ),
             ),
-          ),
+
+            // 底部操作区
+            _buildBottomBar(infoStyle),
+          ],
         ),
-        const SizedBox(height: 8),
-      ]),
+      ),
     );
   }
 
-  Widget _numBtn(int n) {
-    final selected = _selectedNumber == n;
+  Widget _buildStatus() {
+    final style = GoogleFonts.montserrat(fontSize: 13, fontWeight: FontWeight.w500);
+    if (_gameOver) {
+      return Text('错误 $_errors 次，游戏结束，用时 ${_formatTime(_seconds)}', style: style.copyWith(color: _red));
+    }
+    if (_isSolved) {
+      return Text('解答正确！用时 ${_formatTime(_seconds)}', style: style.copyWith(color: Colors.green));
+    }
+    if (_hasGivenUp) {
+      return Text('已查看答案', style: style.copyWith(color: Colors.orange));
+    }
+    if (_paused) {
+      return Text('已暂停', style: style.copyWith(color: const Color(0xFF455A64)));
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildBottomBar(TextStyle s) {
+    final disabled = _paused || _gameOver;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 4, 24, 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+            _textBtn('新局', _newGame, s),
+            _textBtn('完成', (disabled || _isSolved || _hasGivenUp) ? null : _checkCompletion, s, fill: true),
+            _textBtn('求解', (disabled || _isSolved || _hasGivenUp) ? null : _autoSolve, s),
+          ]),
+          const SizedBox(height: 6),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+            _iconTextBtn(Icons.undo, '撤销', disabled ? null : (_undoStack.isEmpty ? null : _undo), s),
+            _iconTextBtn(Icons.replay, '重置', _restart, s),
+            _iconTextBtn(Icons.backspace, '擦除', disabled ? null : _erase, s),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _textBtn(String label, VoidCallback? onTap, TextStyle s, {bool fill = false}) {
+    final isDisabled = onTap == null;
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(6),
-        onTap: () {
-          final board = _boardKey.currentState;
-          final newSelected = selected ? null : n;
-          if (newSelected != null && board != null) {
-            board.fillSelectedCell(n);
-          }
-          setState(() => _selectedNumber = newSelected);
-        },
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
         child: Container(
-          width: 38, height: 38,
-          decoration: BoxDecoration(
-            color: selected ? _blue : Colors.white,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: selected ? _blue : const Color(0xFFDDDDDD), width: 1.5),
-          ),
+          width: 88, height: 44,
           alignment: Alignment.center,
-          child: Text('$n', style: TextStyle(
-            fontSize: 18,
-            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-            color: selected ? Colors.white : const Color(0xFF455A64),
+          decoration: BoxDecoration(
+            color: isDisabled ? Colors.grey[100]! : fill ? _blue : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(label, style: s.copyWith(
+            fontSize: 15,
+            fontWeight: fill ? FontWeight.w600 : FontWeight.w500,
+            color: isDisabled ? Colors.grey[350]! : fill ? Colors.white : const Color(0xFF455A64),
           )),
         ),
       ),
     );
   }
 
-  Widget _iconBtn(IconData icon, String label, VoidCallback? onTap) {
+  Widget _iconTextBtn(IconData icon, String label, VoidCallback? onTap, TextStyle s) {
+    final isDisabled = onTap == null;
+    final color = isDisabled ? Colors.grey[350]! : const Color(0xFF455A64);
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         onTap: onTap,
         child: Container(
-          width: 68,
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFDDDDDD)),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          width: 88, height: 44,
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 20, color: onTap == null ? Colors.grey[400] : const Color(0xFF455A64)),
-              const SizedBox(height: 2),
-              Text(label, style: TextStyle(fontSize: 10, color: onTap == null ? Colors.grey[400] : const Color(0xFF455A64))),
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 4),
+              Text(label, style: s.copyWith(fontSize: 13, color: color)),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+class _UndoEntry {
+  final int r, c, oldVal;
+  _UndoEntry(this.r, this.c, this.oldVal);
 }
