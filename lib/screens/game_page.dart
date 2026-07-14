@@ -21,6 +21,7 @@ class GamePage extends StatefulWidget {
 class _GamePageState extends State<GamePage> {
   late SudokuPuzzle _puzzle;
   GlobalKey<SudokuBoardState> _boardKey = GlobalKey();
+  final GlobalKey _menuIconKey = GlobalKey();
   int _seconds = 0;
   bool _paused = false;
   bool _isSolved = false;
@@ -28,6 +29,7 @@ class _GamePageState extends State<GamePage> {
   bool _noteMode = false;
   bool _gameOver = false;
   int _errors = 0;
+  String _boardMode = '3×3 常规';
   Timer? _timer;
   Timer? _statusTimer;
   String _statusMsg = '';
@@ -207,6 +209,57 @@ class _GamePageState extends State<GamePage> {
     if (mounted) setState(() {});
   }
 
+  void _showModeMenu() {
+    final RenderBox? box = _menuIconKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final pos = box.localToGlobal(Offset.zero);
+    final size = box.size;
+
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        pos.dx,
+        pos.dy + size.height,
+        pos.dx + 120,
+        pos.dy + size.height + 80,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      items: [
+        PopupMenuItem(
+          value: '3×3 常规',
+          height: 34,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('3×3 常规', style: TextStyle(fontSize: 13)),
+              const SizedBox(width: 18),
+              if (_boardMode == '3×3 常规')
+                const Icon(Icons.check, size: 14, color: _blue),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(height: 1),
+        const PopupMenuItem(
+          value: '4×4 常规',
+          height: 34,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('4×4 常规', style: TextStyle(fontSize: 13)),
+            ],
+          ),
+        ),
+      ],
+    ).then((mode) {
+      if (mode == '4×4 常规') {
+        _showMsg('4×4 模式敬请期待');
+      } else if (mode != null && mode != _boardMode) {
+        setState(() => _boardMode = mode);
+        _newGame();
+      }
+    });
+  }
+
   void _showMsg(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg, style: GoogleFonts.montserrat()),
@@ -235,7 +288,11 @@ class _GamePageState extends State<GamePage> {
       appBar: AppBar(
         leading: Padding(
           padding: const EdgeInsets.only(left: 8),
-          child: Icon(Icons.more_horiz, color: const Color(0xFF78909C), size: 24),
+          child: GestureDetector(
+            key: _menuIconKey,
+            onTap: () => _showModeMenu(),
+            child: const Icon(Icons.more_horiz, color: Color(0xFF78909C), size: 24),
+          ),
         ),
         leadingWidth: 40,
         title: Text('数独', style: GoogleFonts.montserrat(fontWeight: FontWeight.w700)),
