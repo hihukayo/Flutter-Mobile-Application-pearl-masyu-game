@@ -9,7 +9,6 @@ import '../widgets/sudoku_board.dart';
 
 const _blue = Color(0xFF0B4CFF);
 const _red = Color(0xFFE53935);
-const _maxErrors = 3;
 
 class GamePage extends StatefulWidget {
   const GamePage({super.key});
@@ -30,6 +29,9 @@ class _GamePageState extends State<GamePage> {
   bool _gameOver = false;
   int _errors = 0;
   String _boardMode = '3×3 常规';
+  int get _boardSize => _boardMode.startsWith('4') ? 4 : 3;
+  int get _maxErrors => _boardSize == 3 ? 3 : 6;
+  int get _clueCount => _boardSize == 3 ? 30 : 60;
   Timer? _timer;
   Timer? _statusTimer;
   String _statusMsg = '';
@@ -55,7 +57,7 @@ class _GamePageState extends State<GamePage> {
 
   void _newGame() {
     _tap();
-    _puzzle = SudokuGenerator().generate(clues: 30);
+    _puzzle = SudokuGenerator(boardSize: _boardSize).generate(clues: _clueCount);
     _isSolved = false;
     _hasGivenUp = false;
     _noteMode = false;
@@ -142,6 +144,17 @@ class _GamePageState extends State<GamePage> {
     else if (event.logicalKey == LogicalKeyboardKey.digit8 || event.logicalKey == LogicalKeyboardKey.numpad8) n = 8;
     else if (event.logicalKey == LogicalKeyboardKey.digit9 || event.logicalKey == LogicalKeyboardKey.numpad9) n = 9;
 
+    // 4×4 模式字母键 A-G（对应 10-16）
+    if (n == null && _boardSize == 4) {
+      if (event.logicalKey == LogicalKeyboardKey.keyA) n = 10;
+      else if (event.logicalKey == LogicalKeyboardKey.keyB) n = 11;
+      else if (event.logicalKey == LogicalKeyboardKey.keyC) n = 12;
+      else if (event.logicalKey == LogicalKeyboardKey.keyD) n = 13;
+      else if (event.logicalKey == LogicalKeyboardKey.keyE) n = 14;
+      else if (event.logicalKey == LogicalKeyboardKey.keyF) n = 15;
+      else if (event.logicalKey == LogicalKeyboardKey.keyG) n = 16;
+    }
+
     if (n != null) {
       _tap();
       _boardKey.currentState?.fillNumber(n);
@@ -183,11 +196,12 @@ class _GamePageState extends State<GamePage> {
     _tap();
     _timer?.cancel();
     _boardKey = GlobalKey();
+    final gs = _puzzle.gridSize;
     setState(() {
       _paused = true;
       _hasGivenUp = true;
-      for (int r = 0; r < 9; r++)
-        for (int c = 0; c < 9; c++)
+      for (int r = 0; r < gs; r++)
+        for (int c = 0; c < gs; c++)
           _puzzle.cells[r][c] = _puzzle.solution[r][c];
     });
   }
@@ -195,8 +209,9 @@ class _GamePageState extends State<GamePage> {
   void _restart() {
     _tap();
     _undoStack.clear();
-    for (int r = 0; r < 9; r++)
-      for (int c = 0; c < 9; c++) {
+    final gs = _puzzle.gridSize;
+    for (int r = 0; r < gs; r++)
+      for (int c = 0; c < gs; c++) {
         if (!_puzzle.given[r][c]) _puzzle.cells[r][c] = 0;
         _puzzle.notes[r][c].clear();
       }
@@ -228,6 +243,7 @@ class _GamePageState extends State<GamePage> {
         PopupMenuItem(
           value: '3×3 常规',
           height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -239,21 +255,23 @@ class _GamePageState extends State<GamePage> {
           ),
         ),
         const PopupMenuDivider(height: 1),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: '4×4 常规',
           height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('4×4 常规', style: TextStyle(fontSize: 13)),
+              const Text('4×4 常规', style: TextStyle(fontSize: 13)),
+              const SizedBox(width: 18),
+              if (_boardMode == '4×4 常规')
+                const Icon(Icons.check, size: 14, color: _blue),
             ],
           ),
         ),
       ],
     ).then((mode) {
-      if (mode == '4×4 常规') {
-        _showMsg('4×4 模式敬请期待');
-      } else if (mode != null && mode != _boardMode) {
+      if (mode != null && mode != _boardMode) {
         setState(() => _boardMode = mode);
         _newGame();
       }
@@ -269,9 +287,10 @@ class _GamePageState extends State<GamePage> {
   }
 
   int _cluesRemaining() {
+    final gs = _puzzle.gridSize;
     int n = 0;
-    for (int r = 0; r < 9; r++)
-      for (int c = 0; c < 9; c++)
+    for (int r = 0; r < gs; r++)
+      for (int c = 0; c < gs; c++)
         if (_puzzle.cells[r][c] == 0) n++;
     return n;
   }
@@ -412,17 +431,21 @@ class _GamePageState extends State<GamePage> {
               child: TextField(
                 controller: _textController,
                 focusNode: _textFocus,
-                keyboardType: TextInputType.number,
+                keyboardType: TextInputType.text,
                 textInputAction: TextInputAction.done,
                 showCursor: false,
                 enableInteractiveSelection: false,
                 style: const TextStyle(fontSize: 0.1, color: Colors.transparent),
                 decoration: const InputDecoration(border: InputBorder.none),
                 onChanged: (v) {
-                  final digits = v.replaceAll(RegExp(r'[^1-9]'), '');
-                  if (digits.isNotEmpty) {
-                    final n = int.parse(digits.substring(digits.length - 1));
-                    _boardKey.currentState?.fillNumber(n);
+                  final clean = _boardSize == 3
+                      ? v.replaceAll(RegExp(r'[^1-9]'), '')
+                      : v.toUpperCase().replaceAll(RegExp(r'[^1-9A-G]'), '');
+                  if (clean.isNotEmpty) {
+                    final ch = clean.substring(clean.length - 1);
+                    final n = ch.codeUnitAt(0);
+                    final val = n >= 65 ? n - 65 + 10 : int.parse(ch); // A=10, B=11...
+                    _boardKey.currentState?.fillNumber(val);
                   }
                   _textController.clear();
                 },

@@ -29,19 +29,8 @@ class SudokuBoardState extends State<SudokuBoard> {
   int? _selectedRow, _selectedCol;
   final Set<String> _errors = {};
 
-  bool _isValidAt(int r, int c) {
-    final n = widget.puzzle.cells[r][c];
-    if (n == 0) return true;
-    for (int i = 0; i < 9; i++) {
-      if (i != c && widget.puzzle.cells[r][i] == n) return false;
-      if (i != r && widget.puzzle.cells[i][c] == n) return false;
-    }
-    final br = r - r % 3, bc = c - c % 3;
-    for (int i = br; i < br + 3; i++)
-      for (int j = bc; j < bc + 3; j++)
-        if ((i != r || j != c) && widget.puzzle.cells[i][j] == n) return false;
-    return true;
-  }
+  int get _gs => widget.puzzle.gridSize;
+  int get _bs => widget.puzzle.boardSize;
 
   /// 清除当前选中格（供物理键盘 Backspace/Delete 调用）
   void clearSelected() {
@@ -97,6 +86,8 @@ class SudokuBoardState extends State<SudokuBoard> {
   @override
   Widget build(BuildContext context) {
     final textStyle = GoogleFonts.montserrat();
+    final fontSize = _gs == 9 ? 22.0 : 14.0;
+    final noteSize = _gs == 9 ? 13.0 : 9.0;
 
     return Container(
         decoration: BoxDecoration(
@@ -106,12 +97,12 @@ class SudokuBoardState extends State<SudokuBoard> {
         clipBehavior: Clip.hardEdge,
         child: GridView.builder(
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: 81,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 9, mainAxisSpacing: 0, crossAxisSpacing: 0,
+          itemCount: _gs * _gs,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: _gs, mainAxisSpacing: 0, crossAxisSpacing: 0,
           ),
           itemBuilder: (_, index) {
-            final r = index ~/ 9, c = index % 9;
+            final r = index ~/ _gs, c = index % _gs;
             final val = widget.puzzle.cells[r][c];
             final isGiven = widget.puzzle.given[r][c];
             final isSelected = _selectedRow == r && _selectedCol == c;
@@ -119,7 +110,7 @@ class SudokuBoardState extends State<SudokuBoard> {
             final inSameRow = _selectedRow == r;
             final inSameCol = _selectedCol == c;
             final inSameBox = _selectedRow != null && _selectedCol != null &&
-                r ~/ 3 == _selectedRow! ~/ 3 && c ~/ 3 == _selectedCol! ~/ 3;
+                r ~/ _bs == _selectedRow! ~/ _bs && c ~/ _bs == _selectedCol! ~/ _bs;
             final isHighlighted = (inSameRow || inSameCol || inSameBox) && !isSelected;
 
             Color? textColor;
@@ -138,6 +129,8 @@ class SudokuBoardState extends State<SudokuBoard> {
               fontWeight = FontWeight.w600;
             }
 
+            final display = val != 0 ? SudokuPuzzle.displayValue(val) : '';
+
             return GestureDetector(
               onTap: () => _onCellTap(r, c),
               child: Container(
@@ -147,12 +140,12 @@ class SudokuBoardState extends State<SudokuBoard> {
                        : Colors.white,
                   border: Border(
                     right: BorderSide(
-                      color: (c + 1) % 3 == 0 ? const Color(0xFF455A64) : Colors.grey[300]!,
-                      width: (c + 1) % 3 == 0 ? 2 : 0.5,
+                      color: (c + 1) % _bs == 0 ? const Color(0xFF455A64) : Colors.grey[300]!,
+                      width: (c + 1) % _bs == 0 ? 2 : 0.5,
                     ),
                     bottom: BorderSide(
-                      color: (r + 1) % 3 == 0 ? const Color(0xFF455A64) : Colors.grey[300]!,
-                      width: (r + 1) % 3 == 0 ? 2 : 0.5,
+                      color: (r + 1) % _bs == 0 ? const Color(0xFF455A64) : Colors.grey[300]!,
+                      width: (r + 1) % _bs == 0 ? 2 : 0.5,
                     ),
                   ),
                 ),
@@ -161,9 +154,9 @@ class SudokuBoardState extends State<SudokuBoard> {
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
-                            '$val',
+                            display,
                             style: textStyle.copyWith(
-                              fontSize: 22,
+                              fontSize: fontSize,
                               fontWeight: fontWeight,
                               color: textColor,
                             ),
@@ -172,7 +165,7 @@ class SudokuBoardState extends State<SudokuBoard> {
                       )
                     : widget.puzzle.notes[r][c].isEmpty
                         ? null
-                        : _buildNotes(r, c, textStyle),
+                        : _buildNotes(r, c, textStyle, noteSize),
               ),
             );
           },
@@ -180,18 +173,21 @@ class SudokuBoardState extends State<SudokuBoard> {
     );
   }
 
-  Widget _buildNotes(int r, int c, TextStyle ts) {
+  Widget _buildNotes(int r, int c, TextStyle ts, double fontSize) {
     if (widget.puzzle.notes[r][c].isEmpty) return const SizedBox.shrink();
     final n = widget.puzzle.notes[r][c].first;
     return Padding(
-      padding: const EdgeInsets.all(3),
+      padding: EdgeInsets.all(_gs == 9 ? 3 : 2),
       child: Align(
         alignment: Alignment.topLeft,
-        child: Text('$n', style: ts.copyWith(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          color: const Color(0xFF0B4CFF),
-        )),
+        child: Text(
+          n <= 9 ? '$n' : String.fromCharCode(0x41 + n - 10),
+          style: ts.copyWith(
+            fontSize: fontSize,
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFF0B4CFF),
+          ),
+        ),
       ),
     );
   }

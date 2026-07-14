@@ -2,21 +2,25 @@ import 'dart:math';
 import 'sudoku_game.dart';
 
 class SudokuGenerator {
+  final int boardSize;
   final Random _rng;
-  SudokuGenerator([int? seed]) : _rng = Random(seed);
+  int get gridSize => boardSize * boardSize;
+
+  SudokuGenerator({this.boardSize = 3, int? seed})
+      : _rng = Random(seed);
 
   SudokuPuzzle generate({int clues = 30}) {
-    final puzzle = SudokuPuzzle();
+    final puzzle = SudokuPuzzle(boardSize: boardSize);
     _fillGrid(puzzle.solution);
     // 复制答案到题目
-    for (int r = 0; r < 9; r++)
-      for (int c = 0; c < 9; c++)
+    for (int r = 0; r < gridSize; r++)
+      for (int c = 0; c < gridSize; c++)
         puzzle.cells[r][c] = puzzle.solution[r][c];
     // 移除数字
     _removeCells(puzzle, clues);
     // 标记题目格
-    for (int r = 0; r < 9; r++)
-      for (int c = 0; c < 9; c++)
+    for (int r = 0; r < gridSize; r++)
+      for (int c = 0; c < gridSize; c++)
         puzzle.given[r][c] = puzzle.cells[r][c] != 0;
     return puzzle;
   }
@@ -25,7 +29,7 @@ class SudokuGenerator {
     final empty = _findEmpty(grid);
     if (empty == null) return true;
     final (r, c) = empty;
-    final nums = [1, 2, 3, 4, 5, 6, 7, 8, 9]..shuffle(_rng);
+    final nums = List.generate(gridSize, (i) => i + 1)..shuffle(_rng);
     for (final n in nums) {
       if (_isValid(grid, r, c, n)) {
         grid[r][c] = n;
@@ -37,38 +41,44 @@ class SudokuGenerator {
   }
 
   bool _isValid(List<List<int>> grid, int r, int c, int n) {
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < gridSize; i++) {
       if (grid[r][i] == n) return false;
       if (grid[i][c] == n) return false;
     }
-    final br = r - r % 3, bc = c - c % 3;
-    for (int i = br; i < br + 3; i++)
-      for (int j = bc; j < bc + 3; j++)
+    final br = r - r % boardSize, bc = c - c % boardSize;
+    for (int i = br; i < br + boardSize; i++)
+      for (int j = bc; j < bc + boardSize; j++)
         if (grid[i][j] == n) return false;
     return true;
   }
 
   (int, int)? _findEmpty(List<List<int>> grid) {
-    for (int r = 0; r < 9; r++)
-      for (int c = 0; c < 9; c++)
+    for (int r = 0; r < gridSize; r++)
+      for (int c = 0; c < gridSize; c++)
         if (grid[r][c] == 0) return (r, c);
     return null;
   }
 
   void _removeCells(SudokuPuzzle puzzle, int clues) {
+    final total = gridSize * gridSize;
     final all = <int>[];
-    for (int i = 0; i < 81; i++) all.add(i);
+    for (int i = 0; i < total; i++) all.add(i);
     all.shuffle(_rng);
-    int target = 81 - clues;
+    int target = total - clues;
     for (final pos in all) {
       if (target <= 0) break;
-      final r = pos ~/ 9, c = pos % 9;
+      final r = pos ~/ gridSize, c = pos % gridSize;
       final saved = puzzle.cells[r][c];
       puzzle.cells[r][c] = 0;
-      // 验证唯一解
-      if (_countSolutions(puzzle.clone(), 2) != 1) {
-        puzzle.cells[r][c] = saved; // 多解，放回去
+      if (boardSize == 3) {
+        // 3x3: 验证唯一解
+        if (_countSolutions(puzzle.clone(), 2) != 1) {
+          puzzle.cells[r][c] = saved;
+        } else {
+          target--;
+        }
       } else {
+        // 4x4: 跳过唯一解验证（性能原因）
         target--;
       }
     }
@@ -81,7 +91,7 @@ class SudokuGenerator {
       final empty = _findEmpty(grid);
       if (empty == null) { count++; return; }
       final (r, c) = empty;
-      for (int n = 1; n <= 9; n++) {
+      for (int n = 1; n <= gridSize; n++) {
         if (_isValid(grid, r, c, n)) {
           grid[r][c] = n;
           solve(grid);
@@ -90,7 +100,8 @@ class SudokuGenerator {
         }
       }
     }
-    final grid = List.generate(9, (r) => List<int>.from(puzzle.cells[r]));
+    final grid = List.generate(
+        gridSize, (r) => List<int>.from(puzzle.cells[r]));
     solve(grid);
     return count;
   }
