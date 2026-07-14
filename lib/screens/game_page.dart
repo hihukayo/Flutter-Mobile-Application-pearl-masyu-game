@@ -200,10 +200,10 @@ class _GamePageState extends State<GamePage> {
           ),
         ],
       ),
+      bottomNavigationBar: _buildBottomBar(infoStyle),
       body: Stack(
         children: [
-          SafeArea(
-        child: Column(
+          Column(
           children: [
             const Divider(height: 1, thickness: 0.5),
             // 计数栏（大标题正下方）
@@ -285,13 +285,8 @@ class _GamePageState extends State<GamePage> {
                 ),
               ),
             ),
-            const Divider(height: 1, thickness: 0.5),
-            const SizedBox(height: 12),
-            // 底部操作区
-            _buildBottomBar(infoStyle),
           ],
         ),
-      ),
           // 隐藏输入框
           Positioned(
             left: 0, right: 0, bottom: 0,
@@ -342,21 +337,31 @@ class _GamePageState extends State<GamePage> {
   Widget _buildBottomBar(TextStyle s) {
     final disabled = _paused || _gameOver;
     return Container(
-      padding: const EdgeInsets.fromLTRB(24, 4, 24, 10),
+      color: Colors.white,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _textBtn('新局', _newGame, s),
-            _textBtn('完成', (disabled || _isSolved || _hasGivenUp) ? null : _checkCompletion, s, fill: true),
-            _textBtn('求解', (disabled || _isSolved || _hasGivenUp) ? null : _autoSolve, s),
-          ]),
-          const SizedBox(height: 6),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _iconTextBtn(Icons.undo, '撤销', disabled ? null : (_undoStack.isEmpty ? null : _undo), s),
-            _iconTextBtn(Icons.replay, '重置', _restart, s),
-            _iconTextBtn(Icons.backspace, '擦除', disabled ? null : _erase, s),
-          ]),
+          const Divider(height: 1, thickness: 0.5),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+                  _textBtn('新局', _newGame, s),
+                  _textBtn('完成', (disabled || _isSolved || _hasGivenUp) ? null : _checkCompletion, s, fill: true),
+                  _textBtn('求解', (disabled || _isSolved || _hasGivenUp) ? null : _autoSolve, s),
+                ]),
+                const SizedBox(height: 6),
+                Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+                  _iconTextBtn(Icons.undo, '撤销', disabled ? null : (_undoStack.isEmpty ? null : _undo), s),
+                  _iconTextBtn(Icons.replay, '重置', _restart, s),
+                  _iconTextBtn(Icons.backspace, '擦除', disabled ? null : _erase, s),
+                ]),
+              ],
+            ),
+          ),
         ],
       ),
     );
