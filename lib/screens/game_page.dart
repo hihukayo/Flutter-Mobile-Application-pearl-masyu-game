@@ -79,16 +79,18 @@ class _GamePageState extends State<GamePage> {
   @override
   void initState() {
     super.initState();
-    _initFailedSound();
+    _initAudioAssets();
     _newGame();
   }
 
-  /// 把 failed.mp3 从 asset 复制到应用私有目录（原生 MediaPlayer 可访问）
-  Future<void> _initFailedSound() async {
+  /// 把音频文件从 asset 复制到应用私有目录（原生 MediaPlayer 可访问）
+  Future<void> _initAudioAssets() async {
     try {
-      final data = await rootBundle.load('assets/audio/failed.mp3');
-      final file = File('${Directory.systemTemp.path}/failed.mp3');
-      await file.writeAsBytes(data.buffer.asUint8List());
+      final files = ['failed.mp3', 'Placement.mp3'];
+      for (final name in files) {
+        final data = await rootBundle.load('assets/audio/$name');
+        await File('${Directory.systemTemp.path}/$name').writeAsBytes(data.buffer.asUint8List());
+      }
     } catch (_) {}
   }
 
@@ -112,6 +114,11 @@ class _GamePageState extends State<GamePage> {
   void _click() {
     _clickChannel.invokeMethod('vibrate');
     _clickChannel.invokeMethod('tone_click');
+  }
+
+  /// 填入/删除格子数字时播放的音效
+  void _playPlacement() {
+    _clickChannel.invokeMethod('play_placement', '${Directory.systemTemp.path}/Placement.mp3');
   }
 
   void _success() {
@@ -202,6 +209,7 @@ class _GamePageState extends State<GamePage> {
 
   void _onCellChanged(int r, int c, int oldVal, int newVal, Set<int> oldNotes) {
     if (_paused || _gameOver) return;
+    _playPlacement();
     _undoStack.add(_UndoEntry(
       r: r, c: c,
       oldVal: oldVal, oldNotes: Set<int>.from(oldNotes),

@@ -29,7 +29,8 @@ class MainActivity : FlutterActivity() {
                 "vibrate" -> vibrate()
                 "tone_click" -> playClickTone()
                 "tone_success" -> playSuccessTone()
-                "play_failed" -> playFailedSound(call.arguments as? String ?: "")
+                "play_placement" -> playMp3(call.arguments as? String ?: "")
+                "play_failed" -> playMp3(call.arguments as? String ?: "")
             }
         }
     }
@@ -101,7 +102,7 @@ class MainActivity : FlutterActivity() {
 
     private fun playSuccessTone() = playTone(600.0, 160, endFreq = 1200.0)
 
-    private fun playFailedSound(path: String) {
+    private fun playMp3(path: String) {
         try {
             val file = java.io.File(path)
             if (!file.exists()) return
