@@ -1,7 +1,7 @@
 import 'dart:async';
+import 'dart:math' show Random;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_fonts/google_fonts.dart';
 import '../models/sudoku_game.dart';
 import '../models/sudoku_generator.dart';
@@ -9,6 +9,35 @@ import '../widgets/sudoku_board.dart';
 
 const _blue = Color(0xFF0B4CFF);
 const _red = Color(0xFFE53935);
+
+// ---- 难度参数（提示数范围） ----
+const _range3x3 = {
+  '极简': [17, 22],
+  '困难': [23, 28],
+  '中等': [29, 32],
+  '简单': [33, 36],
+};
+const _diffs3x3 = ['极简', '困难', '中等', '简单'];
+const _weights3x3 = [10, 25, 40, 25]; // 正态分布权重
+
+const _range4x4 = {
+  '困难': [70, 80],
+  '中等': [92, 105],
+  '简单': [110, 130],
+};
+const _diffs4x4 = ['困难', '中等', '简单'];
+const _weights4x4 = [25, 50, 25];
+
+// ---- 难度对应的显示颜色 ----
+Color _diffColor(String diff) {
+  switch (diff) {
+    case '极简': return const Color(0xFFC62828);
+    case '困难': return const Color(0xFFE65100);
+    case '中等': return const Color(0xFF0B4CFF);
+    case '简单': return const Color(0xFF2E7D32);
+    default: return const Color(0xFF455A64);
+  }
+}
 
 class GamePage extends StatefulWidget {
   const GamePage({super.key});
@@ -18,6 +47,7 @@ class GamePage extends StatefulWidget {
 }
 
 class _GamePageState extends State<GamePage> {
+  final Random _rng = Random();
   late SudokuPuzzle _puzzle;
   GlobalKey<SudokuBoardState> _boardKey = GlobalKey();
   final GlobalKey _menuIconKey = GlobalKey();
@@ -28,10 +58,11 @@ class _GamePageState extends State<GamePage> {
   bool _noteMode = false;
   bool _gameOver = false;
   int _errors = 0;
-  String _boardMode = '3×3 常规';
-  int get _boardSize => _boardMode.startsWith('4') ? 4 : 3;
+  int _boardSize = 3;
+  int _clueCount = 30;
+  String _difficulty = '中等';
+  final List<int> _lastClueCounts = <int>[];
   int get _maxErrors => _boardSize == 3 ? 3 : 6;
-  int get _clueCount => _boardSize == 3 ? 30 : 60;
   Timer? _timer;
   Timer? _statusTimer;
   String _statusMsg = '';
@@ -55,8 +86,43 @@ class _GamePageState extends State<GamePage> {
 
   void _tap() => HapticFeedback.lightImpact();
 
+  /// 按正态分布随机选取提示数个数，避免连续重复
+  int _pickClueCount() {
+    final is3 = _boardSize == 3;
+    final diffs = is3 ? _diffs3x3 : _diffs4x4;
+    final weights = is3 ? _weights3x3 : _weights4x4;
+    final ranges = is3 ? _range3x3 : _range4x4;
+
+    // 权重随机选难度
+    final total = weights.fold(0, (a, b) => a + b);
+    int roll = _rng.nextInt(total);
+    String diff = diffs.first;
+    for (int i = 0; i < weights.length; i++) {
+      roll -= weights[i];
+      if (roll < 0) { diff = diffs[i]; break; }
+    }
+
+    final range = ranges[diff]!;
+    int clues = range[0] + _rng.nextInt(range[1] - range[0] + 1);
+
+    // 避免与最近几局相同
+    int tries = 0;
+    while (_lastClueCounts.contains(clues) && tries < 30) {
+      clues = range[0] + _rng.nextInt(range[1] - range[0] + 1);
+      tries++;
+    }
+
+    _lastClueCounts.add(clues);
+    if (_lastClueCounts.length > 3) _lastClueCounts.removeAt(0);
+
+    _difficulty = diff;
+    _clueCount = clues;
+    return clues;
+  }
+
   void _newGame() {
     _tap();
+    _pickClueCount();
     _puzzle = SudokuGenerator(boardSize: _boardSize).generate(clues: _clueCount);
     _isSolved = false;
     _hasGivenUp = false;
@@ -91,9 +157,13 @@ class _GamePageState extends State<GamePage> {
     return '$m:$sec';
   }
 
-  void _onCellChanged(int r, int c, int oldVal, int newVal) {
+  void _onCellChanged(int r, int c, int oldVal, int newVal, Set<int> oldNotes) {
     if (_paused || _gameOver) return;
-    _undoStack.add(_UndoEntry(r, c, oldVal));
+    _undoStack.add(_UndoEntry(
+      r: r, c: c,
+      oldVal: oldVal, oldNotes: Set<int>.from(oldNotes),
+      newVal: newVal, newNotes: <int>{},
+    ));
     if (_undoStack.length > 50) _undoStack.removeAt(0);
     _redoStack.clear();
     if (newVal != 0 && newVal != _puzzle.solution[r][c]) {
@@ -110,13 +180,33 @@ class _GamePageState extends State<GamePage> {
     }
   }
 
+  void _onNoteChanged(int r, int c, Set<int> oldNotes, Set<int> newNotes) {
+    if (_paused || _gameOver) return;
+    _undoStack.add(_UndoEntry(
+      r: r, c: c,
+      oldVal: 0, oldNotes: Set<int>.from(oldNotes),
+      newVal: 0, newNotes: Set<int>.from(newNotes),
+    ));
+    if (_undoStack.length > 50) _undoStack.removeAt(0);
+    _redoStack.clear();
+  }
+
   void _undo() {
     _tap();
     if (_undoStack.isEmpty || _paused || _gameOver) return;
     final entry = _undoStack.removeLast();
     final currentVal = _puzzle.cells[entry.r][entry.c];
-    _redoStack.add(_UndoEntry(entry.r, entry.c, currentVal));
-    setState(() => _puzzle.cells[entry.r][entry.c] = entry.oldVal);
+    final currentNotes = Set<int>.from(_puzzle.notes[entry.r][entry.c]);
+    _redoStack.add(_UndoEntry(
+      r: entry.r, c: entry.c,
+      oldVal: currentVal, oldNotes: currentNotes,
+      newVal: entry.oldVal, newNotes: Set<int>.from(entry.oldNotes),
+    ));
+    setState(() {
+      _puzzle.cells[entry.r][entry.c] = entry.oldVal;
+      _puzzle.notes[entry.r][entry.c] = Set<int>.from(entry.oldNotes);
+    });
+    _syncErrorState();
   }
 
   void _redo() {
@@ -124,8 +214,29 @@ class _GamePageState extends State<GamePage> {
     if (_redoStack.isEmpty || _paused || _gameOver) return;
     final entry = _redoStack.removeLast();
     final currentVal = _puzzle.cells[entry.r][entry.c];
-    _undoStack.add(_UndoEntry(entry.r, entry.c, currentVal));
-    setState(() => _puzzle.cells[entry.r][entry.c] = entry.oldVal);
+    final currentNotes = Set<int>.from(_puzzle.notes[entry.r][entry.c]);
+    _undoStack.add(_UndoEntry(
+      r: entry.r, c: entry.c,
+      oldVal: currentVal, oldNotes: currentNotes,
+      newVal: entry.newVal, newNotes: Set<int>.from(entry.newNotes),
+    ));
+    setState(() {
+      _puzzle.cells[entry.r][entry.c] = entry.newVal;
+      _puzzle.notes[entry.r][entry.c] = Set<int>.from(entry.newNotes);
+    });
+    _syncErrorState();
+  }
+
+  void _syncErrorState() {
+    int count = 0;
+    for (int r = 0; r < _puzzle.gridSize; r++) {
+      for (int c = 0; c < _puzzle.gridSize; c++) {
+        final v = _puzzle.cells[r][c];
+        if (v != 0 && v != _puzzle.solution[r][c]) count++;
+      }
+    }
+    setState(() => _errors = count);
+    _boardKey.currentState?.syncErrors();
   }
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
@@ -204,11 +315,13 @@ class _GamePageState extends State<GamePage> {
         for (int c = 0; c < gs; c++)
           _puzzle.cells[r][c] = _puzzle.solution[r][c];
     });
+    _syncErrorState();
   }
 
   void _restart() {
     _tap();
     _undoStack.clear();
+    _redoStack.clear();
     final gs = _puzzle.gridSize;
     for (int r = 0; r < gs; r++)
       for (int c = 0; c < gs; c++) {
@@ -221,10 +334,15 @@ class _GamePageState extends State<GamePage> {
     _hasGivenUp = false;
     _seconds = 0;
     _startTimer();
+    _boardKey.currentState?.syncErrors();
     if (mounted) setState(() {});
   }
 
   void _showModeMenu() {
+    // 收起手机键盘，防止菜单关闭后键盘弹出
+    _textFocus.unfocus();
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
+
     final RenderBox? box = _menuIconKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) return;
     final pos = box.localToGlobal(Offset.zero);
@@ -241,39 +359,42 @@ class _GamePageState extends State<GamePage> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       items: [
         PopupMenuItem(
-          value: '3×3 常规',
+          value: '3×3',
           height: 34,
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('3×3 常规', style: TextStyle(fontSize: 13)),
+              const Text('3×3', style: TextStyle(fontSize: 13)),
               const SizedBox(width: 18),
-              if (_boardMode == '3×3 常规')
+              if (_boardSize == 3)
                 const Icon(Icons.check, size: 14, color: _blue),
             ],
           ),
         ),
         const PopupMenuDivider(height: 1),
         PopupMenuItem(
-          value: '4×4 常规',
+          value: '4×4',
           height: 34,
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('4×4 常规', style: TextStyle(fontSize: 13)),
+              const Text('4×4', style: TextStyle(fontSize: 13)),
               const SizedBox(width: 18),
-              if (_boardMode == '4×4 常规')
+              if (_boardSize == 4)
                 const Icon(Icons.check, size: 14, color: _blue),
             ],
           ),
         ),
       ],
     ).then((mode) {
-      if (mode != null && mode != _boardMode) {
-        setState(() => _boardMode = mode);
-        _newGame();
+      if (mode != null) {
+        final newSize = mode == '4×4' ? 4 : 3;
+        if (newSize != _boardSize) {
+          setState(() => _boardSize = newSize);
+          _newGame();
+        }
       }
     });
   }
@@ -375,7 +496,12 @@ class _GamePageState extends State<GamePage> {
                     ),
                   ),
                   const SizedBox(width: 24),
-                  Text('${_cluesRemaining()} 空', style: GoogleFonts.montserrat(
+                  Text('$_difficulty', style: GoogleFonts.montserrat(
+                    fontSize: 12, fontWeight: FontWeight.w600,
+                    color: _diffColor(_difficulty),
+                  )),
+                  const SizedBox(width: 4),
+                  Text('${_cluesRemaining()}空', style: GoogleFonts.montserrat(
                     fontSize: 12, fontWeight: FontWeight.w500, color: const Color(0xFF455A64),
                   )),
                 ],
@@ -402,6 +528,7 @@ class _GamePageState extends State<GamePage> {
                               noteMode: _noteMode,
                               readOnly: _paused || _gameOver,
                               onCellChanged: _onCellChanged,
+                              onNoteChanged: _onNoteChanged,
                               onRefresh: () => setState(() {}),
                               onRequestInput: () {
                                 _textFocus.requestFocus();
@@ -561,6 +688,18 @@ class _GamePageState extends State<GamePage> {
 }
 
 class _UndoEntry {
-  final int r, c, oldVal;
-  _UndoEntry(this.r, this.c, this.oldVal);
+  final int r, c;
+  final int oldVal;
+  final Set<int> oldNotes;
+  final int newVal;
+  final Set<int> newNotes;
+
+  _UndoEntry({
+    required this.r,
+    required this.c,
+    required this.oldVal,
+    required this.oldNotes,
+    required this.newVal,
+    required this.newNotes,
+  });
 }

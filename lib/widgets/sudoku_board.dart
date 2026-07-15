@@ -7,7 +7,8 @@ class SudokuBoard extends StatefulWidget {
   final SudokuPuzzle puzzle;
   final bool noteMode;
   final bool readOnly;
-  final void Function(int r, int c, int oldVal, int newVal)? onCellChanged;
+  final void Function(int r, int c, int oldVal, int newVal, Set<int> oldNotes)? onCellChanged;
+  final void Function(int r, int c, Set<int> oldNotes, Set<int> newNotes)? onNoteChanged;
   final VoidCallback? onRefresh;
   final VoidCallback? onRequestInput;
 
@@ -17,6 +18,7 @@ class SudokuBoard extends StatefulWidget {
     this.noteMode = false,
     this.readOnly = false,
     this.onCellChanged,
+    this.onNoteChanged,
     this.onRefresh,
     this.onRequestInput,
   });
@@ -27,7 +29,7 @@ class SudokuBoard extends StatefulWidget {
 
 class SudokuBoardState extends State<SudokuBoard> {
   int? _selectedRow, _selectedCol;
-  final Set<String> _errors = {};
+  Set<String> _errors = {};
 
   int get _gs => widget.puzzle.gridSize;
   int get _bs => widget.puzzle.boardSize;
@@ -38,14 +40,29 @@ class SudokuBoardState extends State<SudokuBoard> {
     final r = _selectedRow!, c = _selectedCol!;
     if (widget.puzzle.given[r][c]) return;
     final old = widget.puzzle.cells[r][c];
-    if (old == 0 && widget.puzzle.notes[r][c].isEmpty) return;
+    final oldNotes = Set<int>.from(widget.puzzle.notes[r][c]);
+    if (old == 0 && oldNotes.isEmpty) return;
     setState(() {
       widget.puzzle.cells[r][c] = 0;
       widget.puzzle.notes[r][c].clear();
       _errors.remove('$r,$c');
     });
-    if (old != 0) widget.onCellChanged?.call(r, c, old, 0);
+    if (old != 0) widget.onCellChanged?.call(r, c, old, 0, oldNotes);
     widget.onRefresh?.call();
+  }
+
+  /// 从 puzzle 数据重新同步错误状态（供外部 undo/redo 调用）
+  void syncErrors() {
+    final newErrors = <String>{};
+    for (int r = 0; r < widget.puzzle.gridSize; r++) {
+      for (int c = 0; c < widget.puzzle.gridSize; c++) {
+        final val = widget.puzzle.cells[r][c];
+        if (val != 0 && val != widget.puzzle.solution[r][c]) {
+          newErrors.add('$r,$c');
+        }
+      }
+    }
+    setState(() => _errors = newErrors);
   }
 
   void fillNumber(int n) {
@@ -54,20 +71,26 @@ class SudokuBoardState extends State<SudokuBoard> {
     if (widget.puzzle.given[r][c]) return;
 
     if (widget.noteMode) {
-      if (widget.puzzle.notes[r][c].contains(n)) {
-        setState(() => widget.puzzle.notes[r][c].remove(n));
-      } else {
-        setState(() => widget.puzzle.setNote(r, c, n));
-      }
+      final oldNotes = Set<int>.from(widget.puzzle.notes[r][c]);
+      setState(() {
+        if (widget.puzzle.notes[r][c].contains(n)) {
+          widget.puzzle.notes[r][c].remove(n);
+        } else {
+          widget.puzzle.setNote(r, c, n);
+        }
+      });
+      final newNotes = Set<int>.from(widget.puzzle.notes[r][c]);
+      widget.onNoteChanged?.call(r, c, oldNotes, newNotes);
     } else {
       final old = widget.puzzle.cells[r][c];
+      final oldNotes = Set<int>.from(widget.puzzle.notes[r][c]);
       setState(() {
         widget.puzzle.cells[r][c] = n;
         widget.puzzle.notes[r][c].clear();
         _errors.remove('$r,$c');
         if (n != widget.puzzle.solution[r][c]) _errors.add('$r,$c');
       });
-      widget.onCellChanged?.call(r, c, old, n);
+      widget.onCellChanged?.call(r, c, old, n, oldNotes);
     }
     widget.onRefresh?.call();
   }
