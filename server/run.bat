@@ -1,7 +1,7 @@
 @echo off
 title Sudoku Launcher
 set PATH=D:\Flutter\bin;%PATH%
-cd /d "%~dp0sudoku"
+cd /d "%~dp0.."
 
 :menu
 cls
