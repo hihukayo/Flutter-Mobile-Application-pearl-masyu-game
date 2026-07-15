@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -28,6 +29,7 @@ class MainActivity : FlutterActivity() {
                 "vibrate" -> vibrate()
                 "tone_click" -> playClickTone()
                 "tone_success" -> playSuccessTone()
+                "play_failed" -> playFailedSound(call.arguments as? String ?: "")
             }
         }
     }
@@ -98,4 +100,17 @@ class MainActivity : FlutterActivity() {
     private fun playClickTone() = playTone(1200.0, 80)
 
     private fun playSuccessTone() = playTone(600.0, 160, endFreq = 1200.0)
+
+    private fun playFailedSound(path: String) {
+        try {
+            val file = java.io.File(path)
+            if (!file.exists()) return
+            val mp = MediaPlayer()
+            mp.setDataSource(file.absolutePath)
+            mp.setOnCompletionListener { mp.release() }
+            mp.setOnErrorListener { _, _, _ -> mp.release(); true }
+            mp.prepare()
+            mp.start()
+        } catch (_: Exception) {}
+    }
 }

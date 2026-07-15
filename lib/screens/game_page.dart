@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' show Random;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -78,7 +79,17 @@ class _GamePageState extends State<GamePage> {
   @override
   void initState() {
     super.initState();
+    _initFailedSound();
     _newGame();
+  }
+
+  /// 把 failed.mp3 从 asset 复制到应用私有目录（原生 MediaPlayer 可访问）
+  Future<void> _initFailedSound() async {
+    try {
+      final data = await rootBundle.load('assets/audio/failed.mp3');
+      final file = File('${Directory.systemTemp.path}/failed.mp3');
+      await file.writeAsBytes(data.buffer.asUint8List());
+    } catch (_) {}
   }
 
   @override
@@ -202,6 +213,9 @@ class _GamePageState extends State<GamePage> {
       _errors++;
       if (_errors >= _maxErrors) {
         _timer?.cancel();
+        _textFocus.unfocus();
+        SystemChannels.textInput.invokeMethod('TextInput.hide');
+        _clickChannel.invokeMethod('play_failed', '${Directory.systemTemp.path}/failed.mp3');
         setState(() {
           _paused = true;
           _gameOver = true;
@@ -209,6 +223,11 @@ class _GamePageState extends State<GamePage> {
         return;
       }
       setState(() {});
+    }
+    // 填满所有格子时自动收起键盘
+    if (newVal != 0 && _puzzle.isComplete()) {
+      _textFocus.unfocus();
+      SystemChannels.textInput.invokeMethod('TextInput.hide');
     }
   }
 
