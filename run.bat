@@ -1,7 +1,7 @@
 @echo off
 title Sudoku Launcher
 set PATH=D:\Flutter\bin;%PATH%
-cd /d "%~dp0sudoku"
+cd /d "%~dp0"
 
 :menu
 cls
@@ -53,7 +53,7 @@ echo.
 echo   ------------------ Web App ------------------
 echo.
 echo   [1/2] Starting backend server...
-start "SudokuBackend" cmd /c "dart run bin\server.dart"
+start "SudokuBackend" cmd /c "cd /d server && dart run bin\server.dart"
 timeout /t 4 /nobreak >nul
 echo   [OK] Backend at http://localhost:8080
 echo.
