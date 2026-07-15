@@ -1,22 +1,22 @@
 # 🧩 数独 Sudoku
 
-Flutter 数独移动应用，支持用户登录注册、多种难度随机数独游戏、个人中心等功能。
+Flutter 数独移动应用，支持用户登录注册、经典/杀手数独、个人中心等功能。
 
 ## ✨ 功能
 
 - **用户系统**：注册 / 登录（后端 MySQL 存储，密码 SHA256 加密）
 - **数独游戏**：
   - 3×3 经典九宫格 & 4×4 十六进制数独
-  - **杀手数独**：3×3 虚线框（Cage）+ 和值模式
-  - **难度自动随机**：极简 / 困难 / 中等 / 简单 / 入门 / 中等 / 困难，遵循正态分布
+  - **杀手数独**（3×3）：虚线框（Cage）+ 和值模式，支持异形笼子
+  - **难度自动随机**：遵循正态分布，避免连续重复
   - 计时器、暂停 / 继续
   - 笔记模式（候选数字标记）
   - 撤销 / 重做（支持笔记操作）
   - 错误计数（3×3 限 3 次，4×4 限 6 次）
   - 自动求解、重置
-  - 触感反馈（按钮震动 + 原生音效）
-  - **自动收起键盘**：填满格子或游戏结束时自动隐藏键盘
-  - **按键防抖**：300ms 消抖，防止误触
+- **音效与震动**：按钮震动 + 原生音效（正弦波/MP3）
+- **自动收起键盘**：填满格子或游戏结束时自动隐藏
+- **按键防抖**：300ms 消抖，防止误触
 - **排行榜**：按分数排名
 - **个人中心**：修改用户名 / 密码 / 手机号、注销账号、头像
 
@@ -27,13 +27,13 @@ Flutter 数独移动应用，支持用户登录注册、多种难度随机数独
 | 前端 | Flutter (Dart) |
 | 后端 | Dart shelf + shelf_router |
 | 数据库 | MySQL |
-| 字体 | Google Fonts (Montserrat) |
+| 音效 | Android AudioTrack / MediaPlayer / audioplayers (Web) |
 
 ---
 
-## 🚀 快速开始
+## 🚀 快速启动
 
-### 1. 环境要求
+### 环境要求
 
 | 工具 | 版本要求 |
 | --- | --- |
@@ -41,10 +41,29 @@ Flutter 数独移动应用，支持用户登录注册、多种难度随机数独
 | Dart SDK | ^3.12 |
 | MySQL | 8.0+ |
 
-### 2. 数据库
+### 一键启动（推荐）
 
-确保 MySQL 运行在 `localhost:3306`，执行以下 SQL：
+项目根目录提供了 **`run.bat`** 启动器，双击运行：
 
+```
+  ------------------ Sudoku Launcher ------------------
+
+     [1]  Install to Phone
+     [2]  Launch Web App
+     [3]  Exit
+
+  Select [1/2/3]:
+```
+
+- **选 `1`** → 自动检测手机 → ADB 端口转发 → 安装到手机
+- **选 `2`** → 自动启动后端（8080）+ 打开网页（8081）
+- **选 `3`** → 退出
+
+> 首次运行需确保 Flutter SDK 在 `D:\Flutter\bin`，或自行修改 `run.bat` 中的 `PATH`。
+
+### 手动启动
+
+**数据库：**
 ```sql
 CREATE DATABASE IF NOT EXISTS PuzzleGame;
 USE PuzzleGame;
@@ -56,216 +75,127 @@ CREATE TABLE IF NOT EXISTS users (
 );
 ```
 
-> **注意**：后端数据库连接配置在 `server/bin/server.dart` 第 10-17 行，如需修改请编辑该文件中的 `MySQLConnectionPool` 参数。
-
-### 3. 启动后端
-
+**后端：**
 ```bash
 cd server
 dart pub get
 dart run bin/server.dart
+# 输出：MySQL 连接成功 → http://localhost:8080
 ```
 
-后端默认运行在 **http://localhost:8080**，输出如下即成功：
-```
-MySQL 连接成功
-服务器已启动：http://localhost:8080
-```
-
-### 4. 前端依赖
-
+**前端依赖：**
 ```bash
-# 在项目根目录（sudoku/）执行
 flutter pub get
 ```
 
----
-
-## 🌐 运行到 Web 浏览器
-
+**Web 浏览器：**
 ```bash
-# 启动开发服务器，自动打开浏览器
-flutter run -d edge       # Microsoft Edge
-flutter run -d chrome     # Google Chrome
+flutter run -d edge --web-port 8081
+# 或 flutter run -d chrome
 ```
 
-Web 模式下前端自动连接 `http://localhost:8080/api`，**无需额外配置**。
-
-> 如果后端不在本机，请修改 `lib/services/api_service.dart` 第 9 行的 `baseUrl`。
+**物理手机（Android）：**
+```bash
+# 1. 手机开启 USB 调试并连接电脑
+# 2. ADB 端口转发
+adb reverse tcp:8080 tcp:8080
+# 3. 安装
+flutter run -d <device_id>
+```
 
 ---
 
-## 📱 运行到物理手机（Android）
-
-### 第一步：连接手机
+## 📱 运行到手机
 
 1. 手机开启 **开发者选项** 和 **USB 调试**
-2. 用 USB 数据线连接电脑
-3. 检查设备是否识别：
+2. USB 连接电脑，运行 `flutter devices` 确认设备已识别
+3. ADB 端口转发（手机 `localhost:8080` → 电脑后端）：
+   ```bash
+   adb reverse tcp:8080 tcp:8080
+   ```
+4. 安装：`flutter run -d <设备ID>`
 
-```bash
-flutter devices
-```
-
-输出示例：
-```
-KOZ AL40 (mobile) • A7JC9X1705G05171 • android-arm64 • Android 10 (API 29)
-```
-
-### 第二步：ADB 端口转发
-
-手机上的 `localhost` 指向手机自身，**不是电脑**。需要用 ADB 将手机端口转发到电脑：
-
-```bash
-adb reverse tcp:8080 tcp:8080
-```
-
-这条命令让手机访问 `localhost:8080` 时，实际连接到**电脑的 8080 端口**（即后端服务）。
-
-> 每次重新插拔手机都需要重新执行此命令。建议手机保持 USB 连接不断开。
-
-### 第三步：运行到手机
-
-```bash
-# 单设备时直接运行
-flutter run
-
-# 多设备时指定设备 ID
-flutter run -d A7JC9X1705G05171
-```
-
-### 第四步：查看运行日志
-
-运行后终端会显示调试日志，按以下快捷键操作：
-- `r` — 热重载（修改代码后即时更新）
-- `R` — 热重启
-- `q` — 退出
+> 每次重新插拔手机需重新执行 `adb reverse`。
 
 ---
 
-## 📦 构建生产版本
-
-### Web 构建
+## 📦 构建
 
 ```bash
+# Web 构建
 flutter build web
-```
-
-产物在 `build/web/` 目录，可用任意静态服务器部署：
-```bash
-# 使用 npx serve 预览
 npx serve build/web
-```
 
-### Android APK 构建
-
-```bash
-# Debug 版（适合测试）
-flutter build apk --debug
-
-# Release 版（适合分发）
-flutter build apk --release
-```
-
-APK 文件位置：`build/app/outputs/flutter-apk/app-release.apk`
-
-> 安装到手机后需确保手机能访问到电脑后端（同局域网或 `adb reverse`）。
-
----
-
-## 📁 项目结构
-
-```
-sudoku/
-├── lib/
-│   ├── main.dart                    # 入口 + 启动画面（自动登录检测）
-│   ├── models/
-│   │   ├── sudoku_game.dart         # 数独数据模型
-│   │   └── sudoku_generator.dart    # 生成器 + 求解器
-│   ├── screens/
-│   │   ├── login_page.dart          # 登录
-│   │   ├── register_page.dart       # 注册
-│   │   ├── home_page.dart           # 首页（底部导航）
-│   │   ├── game_page.dart           # 数独游戏核心
-│   │   ├── rank_page.dart           # 排行榜
-│   │   ├── profile_page.dart        # 个人中心
-│   │   └── settings_page.dart       # 设置
-│   ├── widgets/
-│   │   └── sudoku_board.dart        # 数独棋盘组件
-│   └── services/
-│       └── api_service.dart         # API 请求封装
-├── assets/
-│   └── audio/
-│       ├── Placement.mp3            # 填入/删除数字音效
-│       └── failed.mp3               # 游戏失败音效
-├── server/
-│   └── bin/server.dart              # 后端服务（shelf）
-└── web/                             # Web 入口
+# Android APK
+flutter build apk --debug    # 调试版
+flutter build apk --release  # 发布版
+# APK 路径：build/app/outputs/flutter-apk/app-release.apk
 ```
 
 ---
 
 ## 🎮 游戏操作
 
-### 触屏操作
-- **点击格子**：选中，弹出数字键盘
+### 触屏
+- **点击格子** → 选中 + 弹出数字键盘
 - **底部按钮**：新局 / 完成 / 求解 / 撤销 / 重置 / 重做
-- **右上角图标**：切换笔记模式（点击数字添加到笔记，再次点击移除）
+- **右上角图标**：切换笔记模式
 
-### 键盘操作（Web / 外接键盘）
-- **数字键 1-9**：填入数字（4×4 模式还支持 A-G 对应 10-16）
+### 键盘（Web / 外接键盘）
+- **1-9**：填入数字（4×4 模式支持 A-G 对应 10-16）
 - **退格 / Delete**：清除当前格
-- **方向键**：移动选中格（需系统支持）
+- **方向键**：移动选中格
 
 ---
 
 ## 🎯 杀手数独
 
-杀手数独在标准数独规则基础上，增加了**虚线框（Cage）** 和 **和值** 约束。
+在标准数独规则上增加 **虚线框（Cage）** 和 **和值** 约束。
 
 ### 规则
-1. **标准数独**：每行、每列、每宫数字 1-9 不重复
-2. **笼子和值**：每个虚线框内的数字之和必须等于右上角的和值
-3. **试错机制**：不逐格对照答案，允许试错。填入数字后自动检查：
-   - 行/列/宫是否重复 → 格子变红，错误+1
-   - 笼子和值是否超限 → 笼子边框变红，格子变红，错误+1
-4. 错误满 3 次游戏结束（与常规模式一致）
+1. 每行、每列、每宫数字 1-9 不重复
+2. 每个虚线框内数字之和必须等于右下角的和值
+3. **试错机制**：不逐格对照答案，允许试错
+4. 错误满 3 次游戏结束
+
+### 判错逻辑
+- **行列宫重复** → 格子变红，错误 +1
+- **笼子和值超限** → 笼子边框变红，格子变红，错误 +1
+- **正常填数** → 不变红（即使与答案不一致）
+- **完成按钮** → 统一校验最终答案
 
 ### 难度分布（正态随机）
 
 | 难度 | 出现概率 | 2格 | 3格 | 4格 | 5格 |
-|:---:|:---:|:---:|:---:|:---:|:---:|
+| --- | --- | --- | --- | --- | --- |
 | 🟢 入门 | ~25% | 60% | 35% | 5% | 0% |
 | 🔵 中等 | ~50% | 40% | 35% | 15% | 10% |
 | 🔴 困难 | ~25% | 30% | 30% | 20% | 20% |
 
 ### 笼子形状
-支持 **L 型**、**阶梯型** 等异形笼子（从笼子任意边界扩展），增加解题乐趣。
+支持 **L 型**、**阶梯型** 等异形笼子，从笼子任意边界扩展生成。
 
 ---
 
 ## 🔊 音效与反馈
 
-游戏使用 Android 原生音频引擎，不依赖系统"触摸声音"设置：
-
-| 操作 | 反馈 |
-|------|------|
-| **按钮点击**（新局/完成等） | 80ms 震动 + 1200Hz 正弦波短音 |
-| **填入/删除数字** | 震动 + `Placement.mp3`（小铃铛声） |
-| **完成游戏** | 震动 + 上扬滑音 600→1200Hz |
-| **错误满 3 次** | 震动 + `failed.mp3`（钢琴低音） |
-| **撤销 / 重做** | 震动 + 按钮点击音 |
+| 操作 | Android | Web |
+|------|---------|-----|
+| 按钮点击 | 80ms 震动 + 1200Hz 正弦波 | `click.wav` |
+| 填入/删除数字 | 震动 + `Placement.mp3` | `Placement.mp3` |
+| 完成游戏 | 震动 + 上扬滑音 600→1200Hz | `success.wav` |
+| 错误满 3 次 | 震动 + `failed.mp3` | `failed.mp3` |
+| 撤销 / 重做 | 震动 + 按钮点击音 | `click.wav` |
 
 - 震动通过 Android Vibrator 原生接口（需 `VIBRATE` 权限）
-- MP3 音效通过 `MediaPlayer` 播放
-- 所有操作带 300ms 防抖，防止误触连点
-- 填满所有格子或游戏结束时自动收起键盘
+- 所有操作带 300ms 防抖
+- 填满格子或游戏结束自动收起键盘
 
 ---
 
-## ⚙️ 难度说明
+## ⚙️ 常规难度说明
 
-每局游戏自动随机选取难度，遵循正态分布：
+每局随机选取难度，正态分布：
 
 ### 3×3（81 格）
 
@@ -283,6 +213,41 @@ sudoku/
 | 🟧 困难 | 70-80 | ~25% |
 | 🟦 中等 | 92-105 | ~50% |
 | 🟩 简单 | 110-130 | ~25% |
+
+---
+
+## 📁 项目结构
+
+```
+sudoku/
+├── run.bat                          # 启动器（手机/网页一键启动）
+├── lib/
+│   ├── main.dart                    # 入口 + 启动画面
+│   ├── models/
+│   │   ├── sudoku_game.dart         # 数据模型（含 Cage）
+│   │   └── sudoku_generator.dart    # 生成器 + 求解器
+│   ├── screens/
+│   │   ├── login_page.dart          # 登录
+│   │   ├── register_page.dart       # 注册
+│   │   ├── home_page.dart           # 首页（底部导航）
+│   │   ├── game_page.dart           # 游戏核心（含杀手数独）
+│   │   ├── rank_page.dart           # 排行榜
+│   │   ├── profile_page.dart        # 个人中心
+│   │   └── settings_page.dart       # 设置
+│   ├── widgets/
+│   │   └── sudoku_board.dart        # 棋盘组件（含 Cage 绘制）
+│   └── services/
+│       └── api_service.dart         # API 请求封装
+├── assets/
+│   └── audio/
+│       ├── click.wav                # 按钮点击（Web）
+│       ├── success.wav              # 游戏完成（Web）
+│       ├── Placement.mp3            # 填入/删除数字
+│       └── failed.mp3               # 游戏失败
+├── server/
+│   └── bin/server.dart              # 后端服务（shelf）
+└── web/                             # Web 入口
+```
 
 ---
 
