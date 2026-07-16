@@ -64,7 +64,7 @@ class RankPageState extends State<RankPage> {
             children: [
               const SizedBox(width: 36, child: Text('排名', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF78909C)))),
               const Expanded(child: Text('玩家', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF78909C)))),
-              SizedBox(width: 72, child: Text('积分', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0B4CFF)))),
+              SizedBox(width: 72, child: Text('积分', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF455A64)))),
               const SizedBox(width: 48, child: Text('胜率', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF78909C)))),
             ],
           ),
@@ -223,7 +223,7 @@ class RankPageState extends State<RankPage> {
               child: Text(
                 _formatScore(totalScore),
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF0B4CFF)),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF455A64)),
               ),
             ),
             SizedBox(

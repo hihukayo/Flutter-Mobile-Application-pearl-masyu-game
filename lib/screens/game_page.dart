@@ -607,6 +607,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
   /// 从服务器加载最近一次存档
   Future<void> _loadGame() async {
     try {
+      _click();
       final res = await ApiService.loadGame(username: widget.username);
       if (!mounted) return;
       if (res['success'] != true) {
@@ -1178,9 +1179,9 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
                 const Divider(height: 1, thickness: 0.5, indent: 40, endIndent: 40),
                 const SizedBox(height: 6),
                 Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  _iconTextBtn(Icons.cloud_upload, '存档', () { _click(); _saveGame(); }, s),
+                  _textBtn('存档', () { _click(); _saveGame(); }, s),
                   Container(width: 1, height: 24, color: Colors.grey[300], margin: const EdgeInsets.symmetric(horizontal: 24)),
-                  _iconTextBtn(Icons.cloud_download, '读档', _loadGame, s),
+                  _textBtn('读档', _loadGame, s),
                 ]),
               ],
             ),
