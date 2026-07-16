@@ -10,3 +10,4 @@ dependencies:
   shelf_router: ^1.1.4
   mysql_client: ^0.0.27
   crypto: ^3.0.6
+  shelf_static: ^1.1.3

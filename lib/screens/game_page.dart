@@ -9,6 +9,7 @@ import 'package:audioplayers/audioplayers.dart';
 import '../models/sudoku_game.dart';
 import '../models/sudoku_generator.dart';
 import '../widgets/sudoku_board.dart';
+import '../services/api_service.dart';
 
 const _clickChannel = MethodChannel('com.example.puzzle_game/click');
 final AudioPlayer _webPlayer = AudioPlayer();
@@ -55,7 +56,9 @@ Color _diffKiller(String diff) {
 }
 
 class GamePage extends StatefulWidget {
-  const GamePage({super.key});
+  final String username;
+
+  const GamePage({super.key, required this.username});
 
   @override
   State<GamePage> createState() => _GamePageState();
@@ -84,6 +87,7 @@ class _GamePageState extends State<GamePage> {
   Timer? _timer;
   Timer? _statusTimer;
   String _statusMsg = '';
+  int _lastScore = 0;
   final List<_UndoEntry> _undoStack = [];
   final List<_UndoEntry> _redoStack = [];
   final TextEditingController _textController = TextEditingController();
@@ -98,6 +102,79 @@ class _GamePageState extends State<GamePage> {
       _initAudioAssets();
     }
     _newGame();
+    // 初始化完成后检查存档，提示续玩
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkResume());
+  }
+
+  /// 进入游戏时检查是否有存档，提示续玩
+  Future<void> _checkResume() async {
+    try {
+      final res = await ApiService.loadGame(username: widget.username);
+      if (!mounted || res['success'] != true) return;
+      final savedAt = res['savedAt'] ?? '';
+
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: SizedBox(
+            width: 300,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.cloud_download_rounded, size: 44, color: Color(0xFF0B4CFF)),
+                  const SizedBox(height: 14),
+                  const Text('发现存档', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                  Text(
+                    '您有一个存档\n($savedAt)\n是否继续上次的游戏？',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 14, color: Color(0xFF78909C), height: 1.5),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          side: BorderSide(color: Colors.grey[300]!),
+                        ),
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('新游戏', style: TextStyle(color: Color(0xFF455A64))),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          backgroundColor: const Color(0xFF0B4CFF),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          elevation: 0,
+                        ),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('继续'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      );
+      if (go == true && mounted) {
+        _restoreFromData(res);
+      }
+    } catch (e) {
+      debugPrint('检查存档失败：$e');
+    }
   }
 
   /// 把音频文件从 asset 复制到应用私有目录（原生 MediaPlayer 可访问）
@@ -116,7 +193,34 @@ class _GamePageState extends State<GamePage> {
     _timer?.cancel();
     _statusTimer?.cancel();
     if (kIsWeb) _webPlayer.dispose();
+    // 退出页面时自动保存（游戏进行中且未结束）
+    if (!_gameOver && !_isSolved && _seconds > 3) {
+      _autoSave();
+    }
     super.dispose();
+  }
+
+  /// 退出时自动保存（静默，不阻塞退出）
+  void _autoSave() {
+    try {
+      final cagesJson = _puzzle.cages?.map((c) => {
+        'cellIndices': c.cellIndices,
+        'sum': c.sum,
+      }).toList();
+      ApiService.saveGame(
+        username: widget.username,
+        boardSize: _boardSize,
+        cells: _puzzle.cells,
+        notes: _puzzle.notes,
+        solution: _puzzle.solution,
+        given: _puzzle.given,
+        seconds: _seconds,
+        errors: _errors,
+        isKiller: _isKiller,
+        killerDifficulty: _killerDifficulty,
+        cages: cagesJson,
+      );
+    } catch (_) {}
   }
 
   void _tap() => HapticFeedback.lightImpact();
@@ -217,6 +321,8 @@ class _GamePageState extends State<GamePage> {
     _gameOver = false;
     _errors = 0;
     _paused = false;
+    _statusMsg = '';
+    _lastScore = 0;
     _undoStack.clear();
     _redoStack.clear();
     _boardKey = GlobalKey();
@@ -235,7 +341,11 @@ class _GamePageState extends State<GamePage> {
 
   void _togglePause() {
     _click();
-    setState(() => _paused = !_paused);
+    final becomingPaused = !_paused;
+    setState(() => _paused = becomingPaused);
+    if (becomingPaused && !_gameOver && !_isSolved) {
+      _saveGame(silent: true); // 暂停时自动存档
+    }
   }
 
   String _formatTime(int s) {
@@ -269,9 +379,12 @@ class _GamePageState extends State<GamePage> {
         } else {
           _clickChannel.invokeMethod('play_failed', '${Directory.systemTemp.path}/failed.mp3');
         }
+        _submitScore(won: false); // 提交失败记录
+        _lastScore = _calculateScore();
         setState(() {
           _paused = true;
           _gameOver = true;
+          _statusMsg = '错误 $_errors 次，获得 $_lastScore 积分';
         });
         return;
       }
@@ -401,12 +514,14 @@ class _GamePageState extends State<GamePage> {
     return KeyEventResult.ignored;
   }
 
-  void _checkCompletion() {
+  Future<void> _checkCompletion() async {
     _click();
     if (_paused || _gameOver) return;
     if (_puzzle.isComplete() && _puzzle.isCorrect()) {
       _timer?.cancel();
       _success();
+      final score = await _submitScore(won: true);
+      _lastScore = score;
       setState(() {
         _paused = true;
         _isSolved = true;
@@ -453,6 +568,282 @@ class _GamePageState extends State<GamePage> {
     _startTimer();
     _boardKey.currentState?.syncErrors();
     if (mounted) setState(() {});
+  }
+
+  // ---- 存档功能 ----
+
+  /// 保存当前游戏进度到服务器
+  Future<void> _saveGame({bool silent = false}) async {
+    try {
+      _click();
+      final cagesJson = _puzzle.cages?.map((c) => {
+        'cellIndices': c.cellIndices,
+        'sum': c.sum,
+      }).toList();
+
+      await ApiService.saveGame(
+        username: widget.username,
+        boardSize: _boardSize,
+        cells: _puzzle.cells,
+        notes: _puzzle.notes,
+        solution: _puzzle.solution,
+        given: _puzzle.given,
+        seconds: _seconds,
+        errors: _errors,
+        isKiller: _isKiller,
+        killerDifficulty: _killerDifficulty,
+        cages: cagesJson,
+      );
+      if (!silent && mounted) _showStatus('存档成功');
+    } catch (e) {
+      if (!silent && mounted) _showStatus('存档失败：$e');
+    }
+  }
+
+  /// 从服务器加载最近一次存档
+  Future<void> _loadGame() async {
+    try {
+      _click();
+      final res = await ApiService.loadGame(username: widget.username);
+      if (!mounted) return;
+      if (res['success'] != true) {
+        _showStatus('没有存档');
+        return;
+      }
+      final savedAt = res['savedAt'] ?? '';
+
+      // 确认加载
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: SizedBox(
+            width: 300,
+            child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.cloud_download_rounded, size: 44, color: Color(0xFF0B4CFF)),
+                const SizedBox(height: 14),
+                const Text('加载存档', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Text(
+                  '存档时间：$savedAt\n当前未保存的进度将丢失。',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 14, color: Color(0xFF78909C), height: 1.5),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          side: BorderSide(color: Colors.grey[300]!),
+                        ),
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('取消', style: TextStyle(color: Color(0xFF455A64))),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          backgroundColor: const Color(0xFF0B4CFF),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          elevation: 0,
+                        ),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('加载'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      );
+      if (go != true || !mounted) return;
+
+      _restoreFromData(res);
+    } catch (e) {
+      if (mounted) _showStatus('加载失败：$e');
+    }
+  }
+
+  /// 从存档数据恢复游戏状态
+  void _restoreFromData(Map<String, dynamic> res) {
+    final boardSize = res['boardSize'] as int? ?? 3;
+    final isKiller = res['isKiller'] == true;
+    final cellsRaw = res['cells'] as List;
+    final notesRaw = res['notes'] as List;
+    final solutionRaw = res['solution'] as List;
+    final givenRaw = res['given'] as List;
+    final seconds = res['seconds'] as int? ?? 0;
+    final errors = res['errors'] as int? ?? 0;
+    final killerDifficulty = res['killerDifficulty'] as String? ?? '中等';
+    final cagesRaw = res['cages'] as List? ?? [];
+
+    final gs = boardSize * boardSize;
+    _boardSize = boardSize;
+    _isKiller = isKiller;
+    _killerDifficulty = killerDifficulty;
+    _puzzle = SudokuPuzzle(boardSize: boardSize);
+
+    for (int r = 0; r < gs; r++) {
+      for (int c = 0; c < gs; c++) {
+        if (r < cellsRaw.length && c < (cellsRaw[r] as List).length) {
+          _puzzle.cells[r][c] = (cellsRaw[r] as List)[c] as int? ?? 0;
+        }
+        if (r < solutionRaw.length && c < (solutionRaw[r] as List).length) {
+          _puzzle.solution[r][c] = (solutionRaw[r] as List)[c] as int? ?? 0;
+        }
+        if (r < givenRaw.length && c < (givenRaw[r] as List).length) {
+          _puzzle.given[r][c] = (givenRaw[r] as List)[c] == 1;
+        }
+        if (r < notesRaw.length && c < (notesRaw[r] as List).length) {
+          final noteList = (notesRaw[r] as List)[c] as List;
+          _puzzle.notes[r][c] = noteList.cast<int>().toSet();
+        }
+      }
+    }
+
+    // 恢复笼子（杀手数独）
+    if (isKiller && cagesRaw.isNotEmpty) {
+      _puzzle.cages = cagesRaw.map((c) {
+        final cMap = c as Map<String, dynamic>;
+        return Cage(
+          cellIndices: (cMap['cellIndices'] as List).cast<int>(),
+          sum: cMap['sum'] as int? ?? 0,
+        );
+      }).toList();
+    }
+
+    _seconds = seconds;
+    _errors = errors;
+    _isSolved = false;
+    _hasGivenUp = false;
+    _gameOver = errors >= (boardSize == 3 ? 3 : 6);
+    _paused = false;
+    _undoStack.clear();
+    _redoStack.clear();
+    _boardKey = GlobalKey();
+
+    _startTimer();
+    if (mounted) setState(() {});
+    // 帧渲染后同步棋盘错误状态，确保之前填错的格子恢复红色
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _boardKey.currentState?.syncErrors();
+    });
+    _showStatus('存档已恢复');
+  }
+
+  /// 计算标准时间（秒）
+  int _standardTime() {
+    if (_boardSize == 4) {
+      switch (_difficulty) {
+        case '简单': return 3600;
+        case '中等': return 7200;
+        case '困难': return 14400;
+        default: return 7200;
+      }
+    }
+    if (_isKiller) {
+      switch (_killerDifficulty) {
+        case '入门': return 2400;
+        case '中等': return 4800;
+        case '困难': return 9600;
+        default: return 4800;
+      }
+    }
+    switch (_difficulty) {
+      case '简单': return 1800;
+      case '中等': return 3600;
+      case '困难':
+      case '极简': return 7200;
+      default: return 3600;
+    }
+  }
+
+  /// 计算本局得分
+  int _calculateScore() {
+    // 基础分 × 模式系数（已合并到基础分）
+    double base;
+    if (_isKiller) {
+      base = 200;       // 杀手 ×2.0
+    } else if (_boardSize == 4) {
+      base = 250;       // 16×16 ×2.5
+    } else {
+      base = 100;       // 9×9 常规 ×1.0
+    }
+
+    // 难度系数
+    String diff = _isKiller ? _killerDifficulty : _difficulty;
+    double diffCoeff;
+    switch (diff) {
+      case '简单':
+      case '入门':
+        diffCoeff = 1.0;
+        break;
+      case '中等':
+        diffCoeff = 1.5;
+        break;
+      case '困难':
+      case '极简':
+        diffCoeff = 2.0;
+        break;
+      default:
+        diffCoeff = 1.0;
+    }
+
+    // 时间加成：(标准耗时 / 实际耗时) × 0.5 + 0.5，最低 0.5
+    double timeCoeff = (_standardTime() / _seconds) * 0.5 + 0.5;
+    timeCoeff = timeCoeff.clamp(0.5, 5.0);
+
+    // 错误惩罚：每次错误扣 1/maxErrors
+    double errorPenalty = (_maxErrors - _errors) / _maxErrors;
+    if (errorPenalty < 0) errorPenalty = 0;
+
+    return (base * diffCoeff * timeCoeff * errorPenalty).round();
+  }
+
+  /// 提交游戏结果（赢/输）到排行榜统计，返回得分
+  Future<int> _submitScore({bool won = true}) async {
+    final score = _calculateScore();
+    try {
+      String mode;
+      if (_isKiller) {
+        mode = '杀手$_killerDifficulty';
+      } else if (_boardSize == 4) {
+        mode = '4×4$_difficulty';
+      } else {
+        mode = '3×3$_difficulty';
+      }
+      final res = await ApiService.submitScore(
+        username: widget.username,
+        won: won,
+        gameMode: mode,
+        boardSize: _boardSize,
+        score: score,
+      );
+      if (mounted) {
+        if (res['success'] == true) {
+          _showStatus('积分已保存：$score 分');
+        } else {
+          _showStatus('提交失败：${res['message']}');
+        }
+      }
+    } catch (e) {
+      if (mounted) _showStatus('网络错误：$e');
+      debugPrint('提交成绩异常：$e');
+    }
+    return score;
   }
 
   void _showModeMenu() {
@@ -543,6 +934,15 @@ class _GamePageState extends State<GamePage> {
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 2),
     ));
+  }
+
+  /// 在状态栏显示消息（棋盘上方），2秒后自动清除
+  void _showStatus(String msg) {
+    setState(() => _statusMsg = msg);
+    _statusTimer?.cancel();
+    _statusTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _statusMsg = '');
+    });
   }
 
   int _cluesRemaining() {
@@ -729,14 +1129,14 @@ class _GamePageState extends State<GamePage> {
 
   Widget _buildStatus() {
     final style = TextStyle(fontSize: 13, fontWeight: FontWeight.w500);
-    if (_gameOver) {
-      return Text('错误 $_errors 次，游戏结束，用时 ${_formatTime(_seconds)}', style: style.copyWith(color: _red));
-    }
     if (_isSolved) {
-      return Text('解答正确！用时 ${_formatTime(_seconds)}', style: style.copyWith(color: Colors.green));
+      return Text('解答正确！用时 ${_formatTime(_seconds)}，获得 $_lastScore 积分', style: style.copyWith(color: Colors.green));
     }
     if (_hasGivenUp) {
       return Text('已查看答案', style: style.copyWith(color: Colors.orange));
+    }
+    if (_gameOver) {
+      return Text('错误 $_errors 次，游戏结束，用时 ${_formatTime(_seconds)}，获得 $_lastScore 积分', style: style.copyWith(color: _red));
     }
     if (_paused) {
       return Text('已暂停', style: style.copyWith(color: const Color(0xFF455A64)));
@@ -771,6 +1171,14 @@ class _GamePageState extends State<GamePage> {
                   _iconTextBtn(Icons.undo, '撤销', disabled ? null : (_undoStack.isEmpty ? null : _undo), s),
                   _iconTextBtn(Icons.replay, '重置', _restart, s),
                   _iconTextBtn(Icons.redo, '重做', disabled ? null : (_redoStack.isEmpty ? null : _redo), s),
+                ]),
+                const SizedBox(height: 6),
+                const Divider(height: 1, thickness: 0.5, indent: 40, endIndent: 40),
+                const SizedBox(height: 6),
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  _iconTextBtn(Icons.cloud_upload, '存档', _saveGame, s),
+                  Container(width: 1, height: 24, color: Colors.grey[300], margin: const EdgeInsets.symmetric(horizontal: 24)),
+                  _iconTextBtn(Icons.cloud_download, '读档', _loadGame, s),
                 ]),
               ],
             ),
