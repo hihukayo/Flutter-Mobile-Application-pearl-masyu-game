@@ -4,8 +4,8 @@ setlocal enabledelayedexpansion
 
 :: ========== Project Paths ==========
 set "ROOT_DIR=%~dp0"
-set "FLUTTER_DIR=%ROOT_DIR%sudoku"
-set "SERVER_DIR=%FLUTTER_DIR%\server"
+set "FLUTTER_DIR=%ROOT_DIR%"
+set "SERVER_DIR=%FLUTTER_DIR%server"
 
 :: 确保 Flutter/Dart 在 PATH 中（新窗口启动时需要）
 set "PATH=D:\Flutter\bin;%PATH%"
