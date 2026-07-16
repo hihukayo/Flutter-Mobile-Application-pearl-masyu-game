@@ -633,7 +633,7 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
                 const Text('加载存档', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
                 Text(
-                  '存档时间：$savedAt\n当前未保存的进度将丢失。',
+                  '存档时间\n$savedAt\n当前未保存的进度将丢失。',
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 14, color: Color(0xFF78909C), height: 1.5),
                 ),
