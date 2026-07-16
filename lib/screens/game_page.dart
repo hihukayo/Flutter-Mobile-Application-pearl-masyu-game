@@ -1179,9 +1179,9 @@ class _GamePageState extends State<GamePage> with WidgetsBindingObserver {
                 const Divider(height: 1, thickness: 0.5, indent: 40, endIndent: 40),
                 const SizedBox(height: 6),
                 Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  _textBtn('存档', () { _click(); _saveGame(); }, s),
+                  _iconTextBtn(Icons.cloud_upload, '存档', () { _click(); _saveGame(); }, s),
                   Container(width: 1, height: 24, color: Colors.grey[300], margin: const EdgeInsets.symmetric(horizontal: 24)),
-                  _textBtn('读档', _loadGame, s),
+                  _iconTextBtn(Icons.cloud_download, '读档', _loadGame, s),
                 ]),
               ],
             ),
