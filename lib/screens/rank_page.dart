@@ -54,6 +54,8 @@ class RankPageState extends State<RankPage> {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        // 顶部留出状态栏空间
+        SizedBox(height: MediaQuery.of(context).padding.top + 4),
         // 标题栏
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
